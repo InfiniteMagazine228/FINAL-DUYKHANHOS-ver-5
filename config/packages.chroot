@@ -1,0 +1,17 @@
+# Môi trường giao diện nhẹ và quản lý mạng
+kali-desktop-xfce
+kali-root-login
+network-manager-gnome
+firmware-linux
+firmware-linux-nonfree
+
+# Driver Wifi diện rộng (Broadcom, Realtek, Intel)
+firmware-brcm80211
+firmware-realtek
+firmware-iwlwifi
+wpasupplicant
+
+# Các công cụ cứu hộ và trình duyệt cơ bản
+gufw
+chromium
+vlc
