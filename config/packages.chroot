@@ -1,17 +1,22 @@
-# Môi trường giao diện nhẹ và quản lý mạng
+# Môi trường đồ họa và giao diện Kali hoàn chỉnh
 kali-desktop-xfce
-kali-root-login
+kali-themes
+kali-wallpapers
+lightdm
+lightdm-gtk-greeter
+
+# Terminal và trình quản lý file trực quan
+xfce4-terminal
+thunar
+thunar-archive-plugin
+
+# Quản lý mạng trực quan (để bấm chọn Wifi ở góc màn hình)
 network-manager-gnome
 firmware-linux
 firmware-linux-nonfree
-
-# Driver Wifi diện rộng (Broadcom, Realtek, Intel)
-firmware-brcm80211
-firmware-realtek
 firmware-iwlwifi
-wpasupplicant
+firmware-realtek
+firmware-brcm80211
 
-# Các công cụ cứu hộ và trình duyệt cơ bản
-gufw
+# Trình duyệt chạy app (Chrome, Zalo)
 chromium
-vlc
