@@ -1,0 +1,8 @@
+==================================================
+        FINAL-DUYKHANHOS - Version 5
+==================================================
+Hệ điều hành bảo mật và cứu hộ đa năng.
+Được xây dựng bởi: DuyKhanh
+Bản quyền: No Copyright :)
+Nền tảng: Kali Linux x64 (Live CD Mode)
+==================================================
