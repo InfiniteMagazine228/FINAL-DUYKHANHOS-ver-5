@@ -1,0 +1,69 @@
+name: Build FINAL-DUYKHANHOS v5
+
+on:
+  workflow_dispatch: # Bấm nút Run thủ công trên GitHub để chạy
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kiểm tra mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Cài đặt công cụ đóng gói và phần mềm vẽ ảnh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y live-build debootstrap git curl imagemagick
+
+      - name: Tải cấu hình gốc của Kali Linux
+        run: |
+          git clone https://gitlab.com live-build
+          
+      - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
+        run: |
+          # Tạo thư mục chứa logo hệ thống trong gói build
+          TARGET_DIR="live-build/kali-config/common/includes.chroot/usr/share/images/desktop-base"
+          mkdir -p $TARGET_DIR
+          
+          # 1. Vẽ hình nền máy tính & màn hình đăng nhập (Nền đen, chữ xanh neon, kích thước 1920x1080)
+          convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
+          -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" \
+          -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" \
+          $TARGET_DIR/login-background.png
+          
+          # Copy file này làm hình nền desktop mặc định luôn
+          cp $TARGET_DIR/login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
+
+          # 2. Vẽ Logo hình vuông nhỏ cho Start Menu (Kích thước 512x512)
+          convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 \
+          -fill "#00FF00" -gravity center -draw "text 0,0 'DK OS'" \
+          $TARGET_DIR/kali-logo-light.png
+          
+          cp $TARGET_DIR/kali-logo-light.png $TARGET_DIR/kali-logo-dark.png
+
+      - name: Nhúng ứng dụng, Wifi và Terminal từ cấu hình của bạn
+        run: |
+          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc
+          if [ -f config/packages.chroot ]; then
+            cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
+          fi
+          
+          # Sao chép các file cấu hình text hoặc file About của bạn (nếu có)
+          if [ -d config/includes.chroot ]; then
+            cp -r config/includes.chroot/* live-build/kali-config/common/includes.chroot/
+          fi
+
+      - name: Tiến hành đóng gói file ISO (x64)
+        run: |
+          cd live-build
+          sudo ./build.sh --variant live-minimal --arch amd64 --verbose
+
+      - name: Đẩy file ISO lên GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v5.0-final
+          name: FINAL-DUYKHANHOS-ver-5
+          body: "Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          files: live-build/images/*.iso
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
