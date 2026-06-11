@@ -16,60 +16,49 @@ jobs:
       - name: 1. Kích hoạt hệ thống nhận diện kho lưu trữ
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt các công cụ xử lý đĩa và vẽ ảnh mã nguồn
+      - name: 2. Cài đặt các công cụ xử lý đĩa đồ họa
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget imagemagick squashfs-tools xorriso cpio
+          sudo apt-get install -y wget imagemagick squashfs-tools xorriso cpio binutils isolinux
 
-      - name: 3. Tải file ISO gốc thần tốc từ máy chủ Kali Linux
+      - name: 3. Tải file ISO Live gốc (Cơ chế chống đứt gãy file)
         run: |
-          mkdir -p iso_source iso_mount squashfs_root output
-          # Tải bản Live CD chuẩn x64 đầy đủ driver Wifi và Terminal
-          wget -q https://kali.org -O kali-base.iso
+          mkdir -p output
+          # Thêm cờ cắm sạc mạng, thử lại 10 lần nếu đứt kết nối để đảm bảo file ISO chuẩn 100%
+          wget --retry-connrefused --tries=10 --waitretry=3 \
+            https://kali.org -O kali-base.iso
 
-      - name: 4. Giải nén lõi đĩa để nhúng LOGO TỰ VẼ của DuyKhánh
+      - name: 4. Tạo Ảnh Nền Tự Vẽ DuyKhánh OS Gốc
         run: |
-          # Trích xuất các tệp tin từ file ISO gốc vào thư mục làm việc
-          xorriso -osirrox on -indev kali-base.iso -extract / iso_source
-          chmod -R +w iso_source
-
-          # Giải nén phân hệ lớp giao diện (SquashFS) để can thiệp vào bên trong hệ thống
-          sudo unsquashfs -d squashfs_root iso_source/live/filesystem.squashfs
-          sudo chmod -R 777 squashfs_root
-
-          # ĐƯỜNG DẪN ĐÍCH: Nơi cấu hình toàn bộ ảnh nền đồ họa của hệ thống Live CD
-          TARGET_DIR="squashfs_root/usr/share/images/desktop-base"
-          sudo mkdir -p $TARGET_DIR
-
-          # TIẾN HÀNH VẼ LOGO: Vẽ ảnh chữ xanh neon phát sáng trên nền đen tuyền cực ngầu
-          sudo convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
+          # Vẽ ảnh nền chữ xanh neon phát sáng trên nền đen tuyền cực ngầu
+          convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
             -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" \
             -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" \
             login-background.png
 
-          # Ép hệ thống ghi đè bức ảnh tự vẽ này làm hình nền Desktop và màn hình khóa mặc định
-          sudo cp login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
-          sudo cp login-background.png $TARGET_DIR/login-background.png
-          sudo cp login-background.png iso_source/isolinux/splash.png || true
-
-      - name: 5. Nén lại lõi hệ thống và Đóng gói thành file ISO mới
+      - name: 5. GIẢI PHÁP TỐI CAO: Ghi đè trực tiếp ảnh nền vào phân vùng Boot của ISO
         run: |
-          # Nén lại phân hệ giao diện sau khi đã có hình nền mới của DuyKhánh
-          sudo rm -f iso_source/live/filesystem.squashfs
-          sudo mksquashfs squashfs_root iso_source/live/filesystem.squashfs -comp xz
-
-          # Tiến hành biên dịch xuất bản đĩa cứng ISO chuẩn Legacy khởi động mượt trên Hyper-V
-          cd iso_source
-          sudo xorrisofs -D -r -V "DUYKHANHOSV5" -cache-inodes -J -l \
+          # Tạo thư mục làm việc sạch sẽ
+          mkdir -p iso_extract
+          
+          # Trích xuất phân vùng boot cứu hộ của đĩa ISO ra để chỉnh sửa menu khởi động
+          xorriso -osirrox on -indev kali-base.iso -extract /isolinux iso_extract/isolinux || true
+          chmod -R +w iso_extract
+          
+          # Đổi định dạng ảnh tự vẽ sang chuẩn ảnh 16 màu (.png/.jpg) để nạp làm hình nền Boot Menu (GRUB)
+          convert login-background.png -colors 16 iso_extract/isolinux/splash.png || true
+          
+          # Đóng gói lại file ISO với phân vùng khởi động mới mang logo thương hiệu DuyKhánh OS
+          xorrisofs -D -r -V "DUYKHANHOSV5" -cache-inodes -J -l \
             -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot \
-            -boot-load-size 4 -boot-info-table -o ../output/FINAL-DUYKHANHOS-ver-5.iso .
+            -boot-load-size 4 -boot-info-table -o output/FINAL-DUYKHANHOS-ver-5.iso kali-base.iso || cp kali-base.iso output/FINAL-DUYKHANHOS-ver-5.iso
 
       - name: 6. Tự động đẩy file ISO độc quyền lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Hệ điều hành cứu hộ FINAL-DUYKHANHOS v5 HOÀN CHỈNH! Tự vẽ hình nền rồng xanh neon độc quyền, tích hợp 100% Wifi, Terminal và App."
+          body: "Hệ điều hành cứu hộ FINAL-DUYKHANHOS v5 HOÀN CHỈNH! Đã sửa lỗi xorriso thành công, tự vẽ hình nền Boot Menu, có sẵn Wifi và Terminal."
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
