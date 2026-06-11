@@ -7,7 +7,7 @@ jobs:
   build-iso:
     runs-on: ubuntu-latest
     steps:
-      - name: Kiểm tra mã nguồn
+      - name: Kiểm tra mã nguồn kho lưu trữ của bạn
         uses: actions/checkout@v4
 
       - name: Cài đặt công cụ đóng gói và phần mềm vẽ ảnh
@@ -15,9 +15,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap git curl imagemagick
 
-      - name: Tải cấu hình gốc của Kali Linux
+      - name: Tải cấu hình gốc Kali Linux (Sửa lỗi 403 GitLab)
         run: |
-          git clone https://gitlab.com live-build
+          # Sử dụng công cụ curl để tải trực tiếp file nén ZIP từ Gitlab, tránh bị lỗi 403 khi dùng lệnh git clone
+          curl -Lk https://gitlab.com -o kali-live.tar.gz
+          tar -xzf kali-live.tar.gz
+          mv kali-live-main live-build
           
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
@@ -43,7 +46,7 @@ jobs:
 
       - name: Nhúng ứng dụng, Wifi và Terminal từ cấu hình của bạn
         run: |
-          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc
+          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc của Kali-Live
           if [ -f config/packages.chroot ]; then
             cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
           fi
@@ -56,6 +59,7 @@ jobs:
       - name: Tiến hành đóng gói file ISO (x64)
         run: |
           cd live-build
+          # Thực hiện đóng gói với quyền root
           sudo ./build.sh --variant live-minimal --arch amd64 --verbose
 
       - name: Đẩy file ISO lên GitHub Releases
@@ -63,7 +67,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          body: "Bản sửa lỗi kết nối 403 thành công! DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
           files: live-build/images/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
