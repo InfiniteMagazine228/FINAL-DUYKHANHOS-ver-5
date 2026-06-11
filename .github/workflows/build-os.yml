@@ -10,33 +10,45 @@ jobs:
       - name: Kiểm tra mã nguồn kho lưu trữ của bạn
         uses: actions/checkout@v4
 
-      - name: Cài đặt hệ thống lõi live-build và vẽ ảnh
+      - name: Cài đặt hệ thống lõi live-build và phần mềm cần thiết
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap imagemagick
+          sudo apt-get install -y live-build debootstrap imagemagick wget
 
-      - name: Tự dựng cấu hình Kali-Live (Không tải ngoài - Không sợ lỗi Git)
+      - name: Khởi tạo và Thiết lập Khóa bảo mật Kali Linux (Sửa lỗi Keyring)
         run: |
-          # Tạo trực tiếp thư mục môi trường đóng gói chuẩn của hệ thống
+          # 1. Tự tạo thư mục chứa keyring hệ thống
+          sudo mkdir -p /usr/share/keyrings
+          
+          # 2. Tải trực tiếp khóa GPG chính thức của Kali Linux từ máy chủ chính hãng về máy chủ GitHub
+          sudo wget -q https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+
+      - name: Tự dựng cấu hình Kali-Live (Ép nhận đúng link Mirror Kali)
+        run: |
           mkdir -p live-build
           cd live-build
           
-          # Lệnh chuẩn hóa môi trường để sinh ra hệ thống file gốc của Kali Linux
-          lb config --architecture amd64 --distribution kali-rolling --binary-images iso-hybrid
+          # Cấu hình lb config, bắt buộc hệ thống lấy nguồn từ http.kali.org và nhúng khóa xác thực vừa tải
+          lb config --architecture amd64 \
+                    --distribution kali-rolling \
+                    --binary-images iso-hybrid \
+                    --mirror-bootstrap "http://http.kali.org/kali" \
+                    --mirror-chroot "http://http.kali.org/kali" \
+                    --mirror-binary "http://http.kali.org/kali" \
+                    --archive-areas "main contrib non-free non-free-firmware" \
+                    --debootstrap-options "--keyring=/usr/share/keyrings/kali-archive-keyring.gpg"
 
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
-          # Tạo cấu trúc thư mục đích cho giao diện ảnh nền
           TARGET_DIR="live-build/config/includes.chroot/usr/share/images/desktop-base"
           mkdir -p $TARGET_DIR
           
-          # 1. Vẽ hình nền máy tính & màn hình khóa (Nền đen, chữ xanh neon, kích thước Full HD)
+          # 1. Vẽ hình nền máy tính & màn hình khóa (Nền đen, chữ xanh neon)
           convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
           -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" \
           -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" \
           $TARGET_DIR/login-background.png
           
-          # Đồng bộ hình nền cho hệ thống đồ họa XFCE
           cp $TARGET_DIR/login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
 
           # 2. Vẽ Logo nhỏ cho Start Menu 
@@ -48,18 +60,15 @@ jobs:
 
       - name: Nhúng ứng dụng, Wifi và Terminal từ cấu hình của bạn
         run: |
-          # Tạo thư mục chứa danh sách gói phần mềm mặc định
           mkdir -p live-build/config/package-lists
           
-          # Sao chép file cài đặt ứng dụng (Chrome, Wifi, UI) của DuyKhánh vào luồng build
+          # Tạo danh sách phần mềm cốt lõi (XFCE, Terminal, Wifi, Chromium)
           if [ -f config/packages.chroot ]; then
             cp config/packages.chroot live-build/config/package-lists/kali.list.chroot
           else
-            # Nếu file chưa tồn tại, tự động tạo danh sách ứng dụng lõi tối giản để không bị lỗi trống file
             echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
           fi
           
-          # Đưa các file cấu hình text hoặc file About của bạn vào màn hình máy tính
           if [ -d config/includes.chroot ]; then
             cp -r config/includes.chroot/* live-build/config/includes.chroot/
           fi
@@ -75,7 +84,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng tối ưu tuyệt đối! Vượt lỗi Git thành công bằng lệnh nội bộ. Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          body: "Sửa lỗi khóa GPG và Mirror thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
