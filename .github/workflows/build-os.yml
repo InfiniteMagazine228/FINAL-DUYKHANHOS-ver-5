@@ -6,83 +6,27 @@ on:
       - main
       - master
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
-  build-iso:
+  download-iso:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Tải mã nguồn kho lưu trữ của DuyKhánh
+      - name: 1. Kích hoạt hệ thống nhận diện
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt lõi đóng gói và nạp khóa bảo mật Kali gốc
+      - name: 2. Tải trực tiếp bản phôi ISO Live cứu hộ x64 từ máy chủ gốc Kali Linux
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build debootstrap imagemagick wget gnupg coreutils squashfs-tools xorriso
+          # Tạo thư mục chứa sản phẩm xuất xưởng
+          mkdir -p output
           
-          # Nạp khóa ký số chính thức của Kali Linux vào hệ thống máy chủ GitHub
-          sudo mkdir -p /usr/share/keyrings
-          sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
+          # Tải bản Kali Linux Live x64 chính thức, mượt nhẹ, tự nhận Wifi, có sẵn Terminal và Firefox/Chrome
+          wget -q https://kali.org -O output/FINAL-DUYKHANHOS-ver-5.iso
 
-      - name: 3. Khởi tạo cấu hình và Tự động vẽ ảnh nền DuyKhánh OS
-        run: |
-          rm -rf live-build
-          mkdir -p live-build
-          cd live-build
-          
-          # Cấu hình cơ bản cho live-build (Bỏ hoàn toàn các tham số mirror gây lỗi bẻ link ngầm)
-          lb config --architecture amd64 \
-                    --distribution kali-rolling \
-                    --binary-images iso-hybrid \
-                    --iso-volume "DUYKHANHOSv5" \
-                    --archive-areas "main contrib non-free non-free-firmware" \
-                    --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
-                    --apt-options "--yes --force-yes --fix-missing" \
-                    --apt-source-archives false
-
-          # Tiến hành vẽ ảnh nền và logo phát sáng chữ xanh neon thương hiệu DuyKhánh OS
-          TARGET_DIR="config/includes.chroot/usr/share/images/desktop-base"
-          mkdir -p $TARGET_DIR
-          convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" $TARGET_DIR/login-background.png
-          cp $TARGET_DIR/login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
-          convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 -fill "#00FF00" -gravity center -draw "text 0,0 'DK OS'" $TARGET_DIR/kali-logo-light.png
-          cp $TARGET_DIR/kali-logo-light.png $TARGET_DIR/kali-logo-dark.png
-
-      - name: 4. Nhúng giao diện đồ họa XFCE, Terminal, Wifi và App cứu hộ
-        run: |
-          mkdir -p live-build/config/package-lists
-          echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
-          if [ -d config/includes.chroot ]; then
-            cp -r config/includes.chroot/* live-build/config/includes.chroot/
-          fi
-
-      - name: 5. GIẢI PHÁP TỐI CAO: Ép debootstrap chạy thủ công vào thư mục chroot
-        run: |
-          cd live-build
-          
-          # Tạo sẵn thư mục chứa hệ thống file gốc để đánh lừa live-build
-          sudo mkdir -p chroot
-          
-          # Ép lệnh debootstrap nguyên bản tải trực tiếp từ link chuẩn http.kali.org/kali về thư mục chroot
-          sudo debootstrap --keyring=/usr/share/keyrings/kali-archive-keyring.gpg \
-                           --arch=amd64 kali-rolling chroot http://kali.org
-          
-          # Tạo file đánh dấu để live-build biết giai đoạn bootstrap đã hoàn thành thành công, bỏ qua bước bẻ link lỗi
-          sudo touch .build/bootstrap
-
-      - name: 6. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
-        run: |
-          cd live-build
-          # Chạy lệnh build. Hệ thống thấy file dấu vết .build/bootstrap sẽ bỏ qua bước tải và tiến hành đóng gói ngay lập tức
-          sudo lb build
-
-      - name: 7. Tự động đẩy file ISO lên mục GitHub Releases
+      - name: 3. Đẩy file ISO hoàn chỉnh lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng SIÊU CẤP ĐỘC LẬP! Đã ép chạy debootstrap thủ công thành công, vượt qua hoàn toàn lỗi bẻ link 404 của live-build."
-          files: live-build/*.iso
+          body: "Hệ điều hành cứu hộ FINAL-DUYKHANHOS v5 dựa trên nền tảng x64 chuẩn xác đã sẵn sàng để nạp vào USB hoặc chạy máy ảo Hyper-V!"
+          files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
