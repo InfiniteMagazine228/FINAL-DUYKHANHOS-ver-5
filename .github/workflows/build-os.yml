@@ -1,6 +1,5 @@
 name: Build FINAL-DUYKHANHOS v5
 
-# Tự động chạy ngay lập tức khi bạn nhấn lưu (Push) code
 on:
   push:
     branches:
@@ -26,7 +25,7 @@ jobs:
           mkdir -p live-build
           cd live-build
           
-          # Sửa lỗi --updates: Loại bỏ tham số lỗi, cấu hình trực tiếp qua các cổng mirror chuẩn của Kali
+          # Cấu hình ép chặt đường dẫn hệ thống tệp tin gốc của Kali Linux
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
@@ -36,7 +35,8 @@ jobs:
                     --mirror-binary "http://kali.org" \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
-                    --apt-options "--yes --force-yes --fix-missing"
+                    --apt-options "--yes --force-yes --fix-missing" \
+                    --apt-source-archives false
 
           # Tiến hành vẽ ảnh nền và logo phát sáng chữ xanh neon
           TARGET_DIR="config/includes.chroot/usr/share/images/desktop-base"
@@ -57,14 +57,15 @@ jobs:
       - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
         run: |
           cd live-build
-          sudo DEBOOTSTRAP=debootstrap lb build
+          # Giải pháp mấu chốt: Khai báo rõ ràng DEF_MIRROR để debootstrap không tự rút gọn sai link tải
+          sudo lb build --mirror-bootstrap "http://kali.org"
 
       - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh sửa đổi tham số --updates thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền."
+          body: "Bản dựng TỰ ĐỘNG HOÀN TOÀN sửa đổi liên kết nguồn nén đĩa thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
