@@ -1,12 +1,10 @@
-# Định nghĩa các biến môi trường
 TARGET_DIR = live-build/config/includes.chroot/usr/share/images/desktop-base
 
 all: build
 
 prepare:
 	@echo "=== 1. Cài đặt hệ thống đóng gói gốc Kali ==="
-	apt-get update && apt-get install -y kali-live-build live-build imagemagick git apt-utils
-	
+	apt-get update && apt-get install -y kali-live-build live-build imagemagick apt-utils
 	@echo "=== 2. Tự khởi tạo phôi cấu hình nội bộ ==="
 	kali-live-build-config --variant minimal --dir live-build
 
@@ -40,7 +38,3 @@ compile:
 
 build: prepare draw-ui inject-apps configure compile
 	@echo "=== HOÀN THÀNH BUILD ISO ==="
-
-clean:
-	@echo "=== Dọn dẹp dữ liệu cũ ==="
-	rm -rf live-build
