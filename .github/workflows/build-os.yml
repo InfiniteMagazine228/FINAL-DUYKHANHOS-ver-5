@@ -1,6 +1,6 @@
 name: Build FINAL-DUYKHANHOS v5
 
-# Tu dong kich hoat ngay lap tuc moi khi co thay doi code
+# Tự động chạy ngay lập tức khi bạn nhấn lưu (Push) code
 on:
   push:
     branches:
@@ -11,20 +11,22 @@ jobs:
   build-iso:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Tai ma nguon kho luu tru cua DuyKhanh
+      - name: 1. Tải mã nguồn kho lưu trữ của DuyKhánh
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat loi dong goi va cap nhat khoa bao mat Kali goc
+      - name: 2. Cài đặt lõi đóng gói và cập nhật khóa bảo mật Kali gốc
         run: |
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap imagemagick wget gnupg
           sudo mkdir -p /usr/share/keyrings
           sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-      - name: 3. Khoi tao phoi cau hinh va Tu dong ve anh nen DuyKhanh OS
+      - name: 3. Khởi tạo phôi cấu hình và Tự động vẽ ảnh nền DuyKhánh OS
         run: |
           mkdir -p live-build
           cd live-build
+          
+          # Sửa lỗi --updates: Loại bỏ tham số lỗi, cấu hình trực tiếp qua các cổng mirror chuẩn của Kali
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
@@ -32,12 +34,11 @@ jobs:
                     --mirror-bootstrap "http://kali.org" \
                     --mirror-chroot "http://kali.org" \
                     --mirror-binary "http://kali.org" \
-                    --security false \
-                    --updates false \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
                     --apt-options "--yes --force-yes --fix-missing"
 
+          # Tiến hành vẽ ảnh nền và logo phát sáng chữ xanh neon
           TARGET_DIR="config/includes.chroot/usr/share/images/desktop-base"
           mkdir -p $TARGET_DIR
           convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" $TARGET_DIR/login-background.png
@@ -45,7 +46,7 @@ jobs:
           convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 -fill "#00FF00" -gravity center -draw "text 0,0 'DK OS'" $TARGET_DIR/kali-logo-light.png
           cp $TARGET_DIR/kali-logo-light.png $TARGET_DIR/kali-logo-dark.png
 
-      - name: 4. Nhung giao dien do hoa XFCE, Terminal, Wifi va App cuu ho
+      - name: 4. Nhúng giao diện đồ họa XFCE, Terminal, Wifi và App cứu hộ
         run: |
           mkdir -p live-build/config/package-lists
           echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
@@ -53,17 +54,17 @@ jobs:
             cp -r config/includes.chroot/* live-build/config/includes.chroot/
           fi
 
-      - name: 5. Khoi chay tien trinh bien dich nen file ISO hoan chinh
+      - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
         run: |
           cd live-build
           sudo DEBOOTSTRAP=debootstrap lb build
 
-      - name: 6. Tu dong day file ISO len muc GitHub Releases
+      - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Ban dung TU DONG HOAN TOAN khong can bam nut! DuyKhanhOS v5 tu ve hinh nen doc quyen da san sang."
+          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh sửa đổi tham số --updates thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
