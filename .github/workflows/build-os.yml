@@ -1,5 +1,6 @@
 name: Build FINAL-DUYKHANHOS v5
 
+# Tự động chạy ngay lập tức khi bạn nhấn lưu (Push) code
 on:
   push:
     branches:
@@ -20,19 +21,24 @@ jobs:
           sudo mkdir -p /usr/share/keyrings
           sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-      - name: 3. Khởi tạo phôi cấu hình và Tự động vẽ ảnh nền DuyKhánh OS
+      - name: 3. Khởi tạo cấu hình SẠCH và Tự động vẽ ảnh nền DuyKhánh OS
         run: |
+          # XÓA BỎ BỘ NHỚ ĐỆM LỖI: Đảm bảo thư mục được tạo mới hoàn toàn, không dính cấu hình cũ
+          rm -rf live-build
           mkdir -p live-build
           cd live-build
           
-          # Cấu hình ép chặt đường dẫn hệ thống tệp tin gốc của Kali Linux
+          # Lệnh dọn dẹp tối cao của live-build để xóa sạch phân hệ bị kẹt cũ
+          sudo lb clean --purge
+          
+          # Thiết lập cấu hình chuẩn xác ép cứng đường dẫn repo Kali Linux
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
                     --iso-volume "DUYKHANHOSv5" \
-                    --mirror-bootstrap "http://kali.org" \
-                    --mirror-chroot "http://kali.org" \
-                    --mirror-binary "http://kali.org" \
+                    --mirror-bootstrap "http://http.kali.org/kali" \
+                    --mirror-chroot "http://http.kali.org/kali" \
+                    --mirror-binary "http://http.kali.org/kali" \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
                     --apt-options "--yes --force-yes --fix-missing" \
@@ -57,15 +63,15 @@ jobs:
       - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
         run: |
           cd live-build
-          # Giải pháp mấu chốt: Khai báo rõ ràng DEF_MIRROR để debootstrap không tự rút gọn sai link tải
-          sudo lb build --mirror-bootstrap "http://kali.org"
+          # Ép trực tiếp link mirror bootstrap một lần nữa ở lệnh build để debootstrap bắt buộc tuân thủ
+          sudo lb build --mirror-bootstrap "http://http.kali.org/kali"
 
       - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng TỰ ĐỘNG HOÀN TOÀN sửa đổi liên kết nguồn nén đĩa thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền."
+          body: "Bản FULL VÁ KHỞI ĐỘNG LẠI! Đã xóa sạch cache kẹt của bộ build cũ, ép hệ thống chạy mượt mà ra file ISO."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
