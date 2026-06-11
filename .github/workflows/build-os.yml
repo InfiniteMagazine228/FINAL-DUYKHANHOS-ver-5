@@ -15,19 +15,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap imagemagick wget gnupg
 
-      - name: Nạp trực tiếp Khóa bảo mật GPG mới của Kali (Sửa lỗi ED65462EC8D5E4C5)
+      - name: Nạp trực tiếp Khóa bảo mật GPG mới của Kali
         run: |
           sudo mkdir -p /usr/share/keyrings
-          
-          # Tải khóa ký số mới nhất để vượt qua bước xác thực chữ ký gói tin của debootstrap
-          sudo wget -q https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+          sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-      - name: Tự dựng cấu hình Kali-Live (Rút gọn Tên ISO dưới 32 ký tự)
+      - name: Tự dựng cấu hình Kali-Live (Tắt trộn nguồn Ubuntu gây lỗi 404)
         run: |
           mkdir -p live-build
           cd live-build
           
-          # Sử dụng tên --iso-volume ngắn gọn (DUYKHANHOSv5) để tránh lỗi ISO_VOLUME quá dài
+          # Cấu hình chặn hoàn toàn việc tự động thêm liên kết ngoài (Tắt security và updates mặc định của hệ thống build)
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
@@ -35,6 +33,8 @@ jobs:
                     --mirror-bootstrap "http://http.kali.org/kali" \
                     --mirror-chroot "http://http.kali.org/kali" \
                     --mirror-binary "http://http.kali.org/kali" \
+                    --security false \
+                    --updates false \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg"
 
@@ -75,7 +75,6 @@ jobs:
       - name: Tiến hành biên dịch file ISO (x64)
         run: |
           cd live-build
-          # Bắt đầu quá trình nén và tải toàn bộ dữ liệu nhân Linux đồ họa
           sudo lb build
 
       - name: Đẩy file ISO lên GitHub Releases
@@ -83,7 +82,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng hoàn tất! Khắc phục triệt để vấn đề đồng bộ chữ ký số và độ dài tên volume đĩa ISO."
+          body: "Đã cô lập hoàn toàn kho lưu trữ! Khắc phục triệt để lỗi trộn nguồn Ubuntu 404 thành công."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
