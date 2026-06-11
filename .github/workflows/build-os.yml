@@ -5,59 +5,22 @@ on:
     branches:
       - main
       - master
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch: # Giữ nút bấm thủ công cho DuyKhánh
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
     steps:
-      # SỬA LỖI 128: Kiểm tra mã nguồn trực tiếp trên máy ảo Ubuntu gốc trước khi vào Container
       - name: 1. Kiểm tra mã nguồn kho lưu trữ DuyKhánh OS
         uses: actions/checkout@v4
 
-      # SỬA LỖI 128: Chạy quy trình đóng gói bên trong một script Docker độc lập để cô lập lỗi phân quyền Git
-      - name: 2. Tiến hành khởi chạy môi trường đóng gói Kali Docker gốc
+      - name: 2. Chạy Makefile đóng gói OS trong môi trường Docker Kali
         run: |
           docker run --privileged --rm \
             -v ${{ github.workspace }}:/__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
             -w /__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
             kalilinux/kali-rolling:latest bash -c "
-              # Sửa lỗi đồng bộ quyền sở hữu trong lòng Docker
-              git config --global --add safe.directory '*'
-              
-              echo '=== Cài đặt các công cụ đóng gói chuẩn Kali ==='
-              apt-get update && apt-get install -y live-build kali-archive-keyring imagemagick wget git
-              
-              echo '=== Tải phôi cấu hình trực tiếp từ hãng Kali ==='
-              git clone --depth=1 https://github.com live-build
-              
-              echo '=== Tự động vẽ hình nền và logo thương hiệu DuyKhánh OS ==='
-              TARGET_DIR='live-build/kali-config/common/includes.chroot/usr/share/images/desktop-base'
-              mkdir -p \$TARGET_DIR
-              convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 -fill '#00FF00' -gravity center -draw \"text 0,0 'FINAL-DUYKHANHOS v5'\" -fill white -pointsize 24 -draw \"text 0,80 'Custom Security OS by DuyKhanh'\" \$TARGET_DIR/login-background.png
-              cp \$TARGET_DIR/login-background.png \$TARGET_DIR/kali-wallpaper-16x9.png
-              convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 -fill '#00FF00' -gravity center -draw \"text 0,0 'DK OS'\" \$TARGET_DIR/kali-logo-light.png
-              cp \$TARGET_DIR/kali-logo-light.png \$TARGET_DIR/kali-logo-dark.png
-              
-              echo '=== Tích hợp giao diện XFCE, Terminal, Wifi và App ==='
-              mkdir -p live-build/kali-config/variant-live-minimal/package-lists
-              if [ -f config/packages.chroot ]; then
-                cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
-              else
-                echo 'kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium' > live-build/kali-config/variant-live-minimal/package-lists/duykhanh.list.chroot
-              fi
-              
-              if [ -d config/includes.chroot ]; then
-                cp -r config/includes.chroot/* live-build/kali-config/common/includes.chroot/
-              fi
-              
-              echo '=== Khởi chạy tiến trình biên dịch file ISO ==='
-              cd live-build
-              bash build.sh --variant live-minimal --arch amd64 --verbose
+              git config --global --add safe.directory '*' && make build
             "
 
       - name: 3. Tự động đẩy file ISO lên mục GitHub Releases
@@ -65,7 +28,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản sửa lỗi 128 (Dubious Ownership) thành công rực rỡ! DuyKhanhOS v5 tự vẽ hình nền độc quyền đã sẵn sàng."
-          files: live-build/images/*.iso
+          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh kết hợp với MAKEFILE! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền phát sáng độc quyền."
+          files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
