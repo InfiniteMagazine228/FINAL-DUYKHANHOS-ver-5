@@ -21,14 +21,14 @@ jobs:
           sudo mkdir -p /usr/share/keyrings
           
           # 2. Tải trực tiếp khóa GPG chính thức của Kali Linux từ máy chủ chính hãng về máy chủ GitHub
-          sudo wget -q https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+          sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-      - name: Tự dựng cấu hình Kali-Live (Ép nhận đúng link Mirror Kali)
+      - name: Tự dựng cấu hình Kali-Live (Sửa lỗi cú pháp --debootstrap-options)
         run: |
           mkdir -p live-build
           cd live-build
           
-          # Cấu hình lb config, bắt buộc hệ thống lấy nguồn từ http.kali.org và nhúng khóa xác thực vừa tải
+          # Thay thế bằng tham số --bootstrap-keyring tương thích tuyệt đối để xác thực gói cài đặt
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
@@ -36,7 +36,7 @@ jobs:
                     --mirror-chroot "http://http.kali.org/kali" \
                     --mirror-binary "http://http.kali.org/kali" \
                     --archive-areas "main contrib non-free non-free-firmware" \
-                    --debootstrap-options "--keyring=/usr/share/keyrings/kali-archive-keyring.gpg"
+                    --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg"
 
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
@@ -84,7 +84,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Sửa lỗi khóa GPG và Mirror thành công! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          body: "Đã sửa đổi tham số cấu hình thành công! Tiến trình đóng gói hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền bắt đầu chạy."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
