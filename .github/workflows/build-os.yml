@@ -13,25 +13,25 @@ jobs:
       - name: Cài đặt hệ thống lõi live-build và phần mềm cần thiết
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap imagemagick wget
+          sudo apt-get install -y live-build debootstrap imagemagick wget gnupg
 
-      - name: Khởi tạo và Thiết lập Khóa bảo mật Kali Linux (Sửa lỗi Keyring)
+      - name: Nạp trực tiếp Khóa bảo mật GPG mới của Kali (Sửa lỗi ED65462EC8D5E4C5)
         run: |
-          # 1. Tự tạo thư mục chứa keyring hệ thống
           sudo mkdir -p /usr/share/keyrings
           
-          # 2. Tải trực tiếp khóa GPG chính thức của Kali Linux từ máy chủ chính hãng về máy chủ GitHub
-          sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
+          # Tải khóa ký số mới nhất để vượt qua bước xác thực chữ ký gói tin của debootstrap
+          sudo wget -q https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-      - name: Tự dựng cấu hình Kali-Live (Sửa lỗi cú pháp --debootstrap-options)
+      - name: Tự dựng cấu hình Kali-Live (Rút gọn Tên ISO dưới 32 ký tự)
         run: |
           mkdir -p live-build
           cd live-build
           
-          # Thay thế bằng tham số --bootstrap-keyring tương thích tuyệt đối để xác thực gói cài đặt
+          # Sử dụng tên --iso-volume ngắn gọn (DUYKHANHOSv5) để tránh lỗi ISO_VOLUME quá dài
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
+                    --iso-volume "DUYKHANHOSv5" \
                     --mirror-bootstrap "http://http.kali.org/kali" \
                     --mirror-chroot "http://http.kali.org/kali" \
                     --mirror-binary "http://http.kali.org/kali" \
@@ -62,7 +62,6 @@ jobs:
         run: |
           mkdir -p live-build/config/package-lists
           
-          # Tạo danh sách phần mềm cốt lõi (XFCE, Terminal, Wifi, Chromium)
           if [ -f config/packages.chroot ]; then
             cp config/packages.chroot live-build/config/package-lists/kali.list.chroot
           else
@@ -76,7 +75,7 @@ jobs:
       - name: Tiến hành biên dịch file ISO (x64)
         run: |
           cd live-build
-          # Kích hoạt tiến trình xây dựng toàn bộ nhân và cấu trúc đĩa ISO
+          # Bắt đầu quá trình nén và tải toàn bộ dữ liệu nhân Linux đồ họa
           sudo lb build
 
       - name: Đẩy file ISO lên GitHub Releases
@@ -84,7 +83,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Đã sửa đổi tham số cấu hình thành công! Tiến trình đóng gói hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền bắt đầu chạy."
+          body: "Bản dựng hoàn tất! Khắc phục triệt để vấn đề đồng bộ chữ ký số và độ dài tên volume đĩa ISO."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
