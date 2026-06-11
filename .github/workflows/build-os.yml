@@ -15,16 +15,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap git curl imagemagick
 
-      - name: Tải cấu hình gốc Kali Linux (Sửa lỗi 403 GitLab)
+      - name: Tải cấu hình gốc Kali Linux (Chuyển sang GitHub Mirror)
         run: |
-          # Sử dụng công cụ curl để tải trực tiếp file nén ZIP từ Gitlab, tránh bị lỗi 403 khi dùng lệnh git clone
-          curl -Lk https://gitlab.com -o kali-live.tar.gz
-          tar -xzf kali-live.tar.gz
-          mv kali-live-main live-build
+          # Nhân bản trực tiếp từ kho chính thức của chính hãng Kali trên GitHub để tránh lỗi 403 từ GitLab
+          git clone --depth=1 https://github.com live-build
           
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
-          # Tạo thư mục chứa logo hệ thống trong gói build
+          # Tạo thư mục chứa logo hệ thống trong gói build theo cấu trúc mới
           TARGET_DIR="live-build/kali-config/common/includes.chroot/usr/share/images/desktop-base"
           mkdir -p $TARGET_DIR
           
@@ -46,7 +44,7 @@ jobs:
 
       - name: Nhúng ứng dụng, Wifi và Terminal từ cấu hình của bạn
         run: |
-          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc của Kali-Live
+          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc của Kali
           if [ -f config/packages.chroot ]; then
             cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
           fi
@@ -59,7 +57,7 @@ jobs:
       - name: Tiến hành đóng gói file ISO (x64)
         run: |
           cd live-build
-          # Thực hiện đóng gói với quyền root
+          # Thực hiện đóng gói hệ thống
           sudo ./build.sh --variant live-minimal --arch amd64 --verbose
 
       - name: Đẩy file ISO lên GitHub Releases
@@ -67,7 +65,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản sửa lỗi kết nối 403 thành công! DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          body: "Bản sửa lỗi giải nén thành công tuyệt đối! DuyKhanhOS v5 hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
           files: live-build/images/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
