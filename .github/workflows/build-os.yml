@@ -16,35 +16,26 @@ jobs:
       - name: 1. Tải mã nguồn kho lưu trữ của DuyKhánh
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt lõi đóng gói và BẺ KHÓA MÃ NGUỒN UBUNTU
+      - name: 2. Cài đặt lõi đóng gói và nạp khóa bảo mật Kali gốc
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap imagemagick wget gnupg coreutils
+          sudo apt-get install -y live-build debootstrap imagemagick wget gnupg coreutils squashfs-tools xorriso
           
-          # Nạp khóa ký số chính thức của Kali Linux
+          # Nạp khóa ký số chính thức của Kali Linux vào hệ thống máy chủ GitHub
           sudo mkdir -p /usr/share/keyrings
           sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
-          
-          # GIẢI PHÁP TỐI CAO: Sửa thẳng vào file cấu hình mặc định của live-build trên máy chủ GitHub
-          # Ép tất cả các file script hệ thống phải trỏ về Kali, không được phép trỏ về Ubuntu nữa
-          sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://kali.org|g' /usr/share/debootstrap/functions
-          sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://kali.org|g' /usr/share/debootstrap/functions
 
-      - name: 3. Khởi tạo cấu hình SẠCH và Tự động vẽ ảnh nền DuyKhánh OS
+      - name: 3. Khởi tạo cấu hình và Tự động vẽ ảnh nền DuyKhánh OS
         run: |
           rm -rf live-build
           mkdir -p live-build
           cd live-build
           
-          sudo lb clean --purge
-          
+          # Cấu hình cơ bản cho live-build (Bỏ hoàn toàn các tham số mirror gây lỗi bẻ link ngầm)
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
                     --iso-volume "DUYKHANHOSv5" \
-                    --mirror-bootstrap "http://kali.org" \
-                    --mirror-chroot "http://kali.org" \
-                    --mirror-binary "http://kali.org" \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
                     --apt-options "--yes --force-yes --fix-missing" \
@@ -66,18 +57,32 @@ jobs:
             cp -r config/includes.chroot/* live-build/config/includes.chroot/
           fi
 
-      - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
+      - name: 5. GIẢI PHÁP TỐI CAO: Ép debootstrap chạy thủ công vào thư mục chroot
         run: |
           cd live-build
-          # Chạy lệnh build tối giản, hệ thống tệp tin đã bị bẻ khóa ở bước 2 nên chắc chắn sẽ nhận đúng link Kali
+          
+          # Tạo sẵn thư mục chứa hệ thống file gốc để đánh lừa live-build
+          sudo mkdir -p chroot
+          
+          # Ép lệnh debootstrap nguyên bản tải trực tiếp từ link chuẩn http.kali.org/kali về thư mục chroot
+          sudo debootstrap --keyring=/usr/share/keyrings/kali-archive-keyring.gpg \
+                           --arch=amd64 kali-rolling chroot http://kali.org
+          
+          # Tạo file đánh dấu để live-build biết giai đoạn bootstrap đã hoàn thành thành công, bỏ qua bước bẻ link lỗi
+          sudo touch .build/bootstrap
+
+      - name: 6. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
+        run: |
+          cd live-build
+          # Chạy lệnh build. Hệ thống thấy file dấu vết .build/bootstrap sẽ bỏ qua bước tải và tiến hành đóng gói ngay lập tức
           sudo lb build
 
-      - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
+      - name: 7. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng ĐỘC LẬP SIÊU CẤP bẻ khóa hệ thống Ubuntu thành công! Đã xử lý triệt để lỗi ép link 404."
+          body: "Bản dựng SIÊU CẤP ĐỘC LẬP! Đã ép chạy debootstrap thủ công thành công, vượt qua hoàn toàn lỗi bẻ link 404 của live-build."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
