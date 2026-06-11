@@ -1,7 +1,7 @@
 name: Build FINAL-DUYKHANHOS v5
 
 on:
-  workflow_dispatch: # Bấm nút Run thủ công trên GitHub để chạy
+  workflow_dispatch: # Bấm nút Run thủ công trên giao diện GitHub
 
 jobs:
   build-iso:
@@ -10,35 +10,36 @@ jobs:
       - name: Kiểm tra mã nguồn kho lưu trữ của bạn
         uses: actions/checkout@v4
 
-      - name: Cài đặt công cụ đóng gói và phần mềm vẽ ảnh
+      - name: Cài đặt hệ thống lõi live-build và vẽ ảnh
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap git curl imagemagick
+          sudo apt-get install -y live-build debootstrap imagemagick
 
-      - name: Tải cấu hình gốc Kali Linux (Clone trực tiếp từ GitHub Kali Linux chính thức)
+      - name: Tự dựng cấu hình Kali-Live (Không tải ngoài - Không sợ lỗi Git)
         run: |
-          # Clone kho mã nguồn chính thức của hãng Kali trên GitHub, cực kỳ ổn định và không sợ lỗi nén
-          git clone --depth=1 https://github.com build-scripts-repo
+          # Tạo trực tiếp thư mục môi trường đóng gói chuẩn của hệ thống
+          mkdir -p live-build
+          cd live-build
           
-          # Di chuyển thư mục chứa bộ công cụ live-build ra ngoài thành thư mục live-build
-          mv build-scripts-repo/kali-live live-build
+          # Lệnh chuẩn hóa môi trường để sinh ra hệ thống file gốc của Kali Linux
+          lb config --architecture amd64 --distribution kali-rolling --binary-images iso-hybrid
 
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
-          # Tạo thư mục chứa logo hệ thống trong gói build
-          TARGET_DIR="live-build/kali-config/common/includes.chroot/usr/share/images/desktop-base"
+          # Tạo cấu trúc thư mục đích cho giao diện ảnh nền
+          TARGET_DIR="live-build/config/includes.chroot/usr/share/images/desktop-base"
           mkdir -p $TARGET_DIR
           
-          # 1. Vẽ hình nền máy tính & màn hình đăng nhập (Nền đen, chữ xanh neon, kích thước 1920x1080)
+          # 1. Vẽ hình nền máy tính & màn hình khóa (Nền đen, chữ xanh neon, kích thước Full HD)
           convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
           -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" \
           -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" \
           $TARGET_DIR/login-background.png
           
-          # Copy file này làm hình nền desktop mặc định luôn
+          # Đồng bộ hình nền cho hệ thống đồ họa XFCE
           cp $TARGET_DIR/login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
 
-          # 2. Vẽ Logo hình vuông nhỏ cho Start Menu (Kích thước 512x512)
+          # 2. Vẽ Logo nhỏ cho Start Menu 
           convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 \
           -fill "#00FF00" -gravity center -draw "text 0,0 'DK OS'" \
           $TARGET_DIR/kali-logo-light.png
@@ -47,28 +48,34 @@ jobs:
 
       - name: Nhúng ứng dụng, Wifi và Terminal từ cấu hình của bạn
         run: |
-          # Sao chép file danh sách phần mềm (packages.chroot) vào cấu hình gốc của Kali
+          # Tạo thư mục chứa danh sách gói phần mềm mặc định
+          mkdir -p live-build/config/package-lists
+          
+          # Sao chép file cài đặt ứng dụng (Chrome, Wifi, UI) của DuyKhánh vào luồng build
           if [ -f config/packages.chroot ]; then
-            cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
+            cp config/packages.chroot live-build/config/package-lists/kali.list.chroot
+          else
+            # Nếu file chưa tồn tại, tự động tạo danh sách ứng dụng lõi tối giản để không bị lỗi trống file
+            echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
           fi
           
-          # Sao chép các file cấu hình text hoặc file About của bạn (nếu có)
+          # Đưa các file cấu hình text hoặc file About của bạn vào màn hình máy tính
           if [ -d config/includes.chroot ]; then
-            cp -r config/includes.chroot/* live-build/kali-config/common/includes.chroot/
+            cp -r config/includes.chroot/* live-build/config/includes.chroot/
           fi
 
-      - name: Tiến hành đóng gói file ISO (x64)
+      - name: Tiến hành biên dịch file ISO (x64)
         run: |
           cd live-build
-          # Thực hiện đóng gói hệ thống với quyền root
-          sudo ./build.sh --variant live-minimal --arch amd64 --verbose
+          # Kích hoạt tiến trình xây dựng toàn bộ nhân và cấu trúc đĩa ISO
+          sudo lb build
 
       - name: Đẩy file ISO lên GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản sửa lỗi hoàn tất! Đã clone trực tiếp từ GitHub chính thức của Kali Linux. Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
-          files: live-build/images/*.iso
+          body: "Bản dựng tối ưu tuyệt đối! Vượt lỗi Git thành công bằng lệnh nội bộ. Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
