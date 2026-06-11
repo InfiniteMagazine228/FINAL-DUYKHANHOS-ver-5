@@ -6,7 +6,6 @@ on:
       - main
       - master
 
-# Ép toàn bộ máy chủ ảo và các Action thành phần chạy trên nền Node.js 24 mới nhất của GitHub
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -17,14 +16,19 @@ jobs:
       - name: 1. Tải mã nguồn kho lưu trữ của DuyKhánh
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt lõi đóng gói và cập nhật khóa bảo mật Kali gốc
+      - name: 2. Cài đặt lõi đóng gói và BẺ KHÓA MÃ NGUỒN UBUNTU
         run: |
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap imagemagick wget gnupg coreutils
           
-          # Nạp khóa ký số mã hóa gói tin chính thức của Kali Linux
+          # Nạp khóa ký số chính thức của Kali Linux
           sudo mkdir -p /usr/share/keyrings
           sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
+          
+          # GIẢI PHÁP TỐI CAO: Sửa thẳng vào file cấu hình mặc định của live-build trên máy chủ GitHub
+          # Ép tất cả các file script hệ thống phải trỏ về Kali, không được phép trỏ về Ubuntu nữa
+          sudo sed -i 's|http://archive.ubuntu.com/ubuntu|http://kali.org|g' /usr/share/debootstrap/functions
+          sudo sed -i 's|http://security.ubuntu.com/ubuntu|http://kali.org|g' /usr/share/debootstrap/functions
 
       - name: 3. Khởi tạo cấu hình SẠCH và Tự động vẽ ảnh nền DuyKhánh OS
         run: |
@@ -34,11 +38,13 @@ jobs:
           
           sudo lb clean --purge
           
-          # Định hình cấu trúc đĩa, loại bỏ các tham số bẻ đường dẫn mirror ngoài
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
                     --iso-volume "DUYKHANHOSv5" \
+                    --mirror-bootstrap "http://kali.org" \
+                    --mirror-chroot "http://kali.org" \
+                    --mirror-binary "http://kali.org" \
                     --archive-areas "main contrib non-free non-free-firmware" \
                     --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
                     --apt-options "--yes --force-yes --fix-missing" \
@@ -63,18 +69,15 @@ jobs:
       - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
         run: |
           cd live-build
-          # GIẢI PHÁP ĐƯỜNG DẪN: Ép trực tiếp biến môi trường trỏ thẳng vào kho gốc của Kali Linux lúc tạo nhân
-          sudo LB_MIRROR_BOOTSTRAP="http://kali.org" \
-               LB_MIRROR_CHROOT="http://kali.org" \
-               LB_MIRROR_BINARY="http://kali.org" \
-               lb build
+          # Chạy lệnh build tối giản, hệ thống tệp tin đã bị bẻ khóa ở bước 2 nên chắc chắn sẽ nhận đúng link Kali
+          sudo lb build
 
       - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh sửa đổi cấu trúc Node.js và liên kết tải thành công!"
+          body: "Bản dựng ĐỘC LẬP SIÊU CẤP bẻ khóa hệ thống Ubuntu thành công! Đã xử lý triệt để lỗi ép link 404."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
