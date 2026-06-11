@@ -6,89 +6,73 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    # Chạy trực tiếp trong môi trường Kali Linux chính gốc
+    container:
+      image: kalilinux/kali-rolling:latest
+      options: --privileged
+
     steps:
       - name: 1. Kiểm tra mã nguồn kho lưu trữ DuyKhánh OS
         uses: actions/checkout@v4
 
-      - name: 2. Cài đặt hệ thống lõi Live-Build và vẽ ảnh
+      - name: 2. Cài đặt các công cụ đóng gói chuẩn Kali Linux
         run: |
-          sudo apt-get update
-          sudo apt-get install -y live-build debootstrap imagemagick wget gnupg
+          apt-get update
+          apt-get install -y live-build kali-archive-keyring imagemagick wget git
 
-      - name: 3. Cập nhật và Cài đặt Khóa ký số GPG mới nhất của Kali
+      - name: 3. Tải phôi cấu hình trực tiếp từ hãng Kali
         run: |
-          sudo mkdir -p /usr/share/keyrings
-          # Tải trực tiếp khóa bảo mật mới nhất để tránh lỗi Unknown Key (ED65462EC8D5E4C5)
-          sudo wget -q https://kali.org -O /usr/share/keyrings/kali-archive-keyring.gpg
+          # Nhân bản kho cấu hình chính thức
+          git clone --depth=1 https://github.com live-build
 
-      - name: 4. Thiết lập cấu hình hệ thống (Sửa lỗi trộn nguồn & Rút gọn tên ISO)
+      - name: 4. Tự động vẽ hình nền và logo thương hiệu DuyKhánh OS
         run: |
-          mkdir -p live-build
-          cd live-build
-          
-          # Cấu hình đóng gói chuẩn hóa: Tắt bảo mật/cập nhật phụ của Ubuntu, đổi tên đĩa thành DUYKHANHOSv5
-          lb config --architecture amd64 \
-                    --distribution kali-rolling \
-                    --binary-images iso-hybrid \
-                    --iso-volume "DUYKHANHOSv5" \
-                    --mirror-bootstrap "http://kali.org" \
-                    --mirror-chroot "http://kali.org" \
-                    --mirror-binary "http://kali.org" \
-                    --security false \
-                    --updates false \
-                    --archive-areas "main contrib non-free non-free-firmware" \
-                    --bootstrap-keyring "/usr/share/keyrings/kali-archive-keyring.gpg" \
-                    --apt-options "--yes --dont-sign-with-each-snapshot --allow-unauthenticated --fix-missing"
-
-      - name: 5. Tự động vẽ hình nền và logo thương hiệu DuyKhánh OS
-        run: |
-          TARGET_DIR="live-build/config/includes.chroot/usr/share/images/desktop-base"
+          # Tạo đường dẫn chứa ảnh nền theo đúng chuẩn cấu trúc mới của Kali
+          TARGET_DIR="live-build/kali-config/common/includes.chroot/usr/share/images/desktop-base"
           mkdir -p $TARGET_DIR
           
-          # Vẽ ảnh nền máy tính & màn hình đăng nhập (Chữ xanh neon phát sáng trên nền đen)
+          # Vẽ ảnh nền máy tính chữ xanh neon phát sáng trên nền đen
           convert -size 1920x1080 xc:black -font DejaVu-Sans-Bold -pointsize 72 \
           -fill "#00FF00" -gravity center -draw "text 0,0 'FINAL-DUYKHANHOS v5'" \
           -fill white -pointsize 24 -draw "text 0,80 'Custom Security OS by DuyKhanh'" \
           $TARGET_DIR/login-background.png
           
-          # Sao chép đồng bộ làm hình nền mặc định cho hệ thống
+          # Copy làm hình nền mặc định cho giao diện đồ họa
           cp $TARGET_DIR/login-background.png $TARGET_DIR/kali-wallpaper-16x9.png
 
-          # Vẽ logo vuông nhỏ cho Start Menu
+          # Vẽ logo vuông cho Start Menu
           convert -size 512x512 xc:black -font DejaVu-Sans-Bold -pointsize 48 \
           -fill "#00FF00" -gravity center -draw "text 0,0 'DK OS'" \
           $TARGET_DIR/kali-logo-light.png
-          
           cp $TARGET_DIR/kali-logo-light.png $TARGET_DIR/kali-logo-dark.png
 
-      - name: 6. Tích hợp giao diện XFCE, Terminal, Wifi và App
+      - name: 5. Tích hợp giao diện XFCE, Terminal, Wifi và App của DuyKhánh
         run: |
-          mkdir -p live-build/config/package-lists
-          
-          # Đảm bảo hệ thống tích hợp đầy đủ Driver Wifi, Terminal, Chrome và giao diện đồ họa mượt nhẹ
+          # Nhúng file cài ứng dụng của bạn vào danh sách build
           if [ -f config/packages.chroot ]; then
-            cp config/packages.chroot live-build/config/package-lists/kali.list.chroot
+            cp config/packages.chroot live-build/kali-config/variant-live-minimal/package-lists/
           else
-            echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
+            # Tự động tạo danh sách ứng dụng lõi mượt nhẹ nếu file trống
+            echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/kali-config/variant-live-minimal/package-lists/duykhanh.list.chroot
           fi
           
-          # Nhúng file thông tin About cá nhân hóa vào màn hình Desktop
+          # Đưa file About vào màn hình Desktop
           if [ -d config/includes.chroot ]; then
-            cp -r config/includes.chroot/* live-build/config/includes.chroot/
+            cp -r config/includes.chroot/* live-build/kali-config/common/includes.chroot/
           fi
 
-      - name: 7. Bắt đầu biên dịch và nén đĩa ISO hoàn chỉnh
+      - name: 6. Khởi chạy tiến trình biên dịch file ISO
         run: |
           cd live-build
-          # Thực thi lệnh đóng gói tối cao
-          sudo lb build
+          # Chạy kịch bản build chính thức của Kali Linux bằng quyền tối cao
+          bash build.sh --variant live-minimal --arch amd64 --verbose
 
-      - name: 8. Tự động đẩy file ISO lên mục GitHub Releases
+      - name: 7. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng sửa lỗi hoàn chỉnh (Bản FULL FIX)! Vượt qua mọi lỗi 404 và đồng bộ hóa hệ thống thành công."
-          files: live-build/*.iso
+          body: "Bản FULL FIX DOCKER hoàn chỉnh! Đã sửa đổi tham số và đường dẫn chạy trong môi trường Kali gốc."
+          files: live-build/images/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
