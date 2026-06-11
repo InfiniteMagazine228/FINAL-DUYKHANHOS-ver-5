@@ -1,6 +1,5 @@
 name: Build FINAL-DUYKHANHOS v5
 
-# Tự động chạy ngay lập tức khi bạn nhấn lưu (Push) code
 on:
   push:
     branches:
@@ -23,15 +22,13 @@ jobs:
 
       - name: 3. Khởi tạo cấu hình SẠCH và Tự động vẽ ảnh nền DuyKhánh OS
         run: |
-          # XÓA BỎ BỘ NHỚ ĐỆM LỖI: Đảm bảo thư mục được tạo mới hoàn toàn, không dính cấu hình cũ
           rm -rf live-build
           mkdir -p live-build
           cd live-build
           
-          # Lệnh dọn dẹp tối cao của live-build để xóa sạch phân hệ bị kẹt cũ
           sudo lb clean --purge
           
-          # Thiết lập cấu hình chuẩn xác ép cứng đường dẫn repo Kali Linux
+          # ĐƯA MIRROR VỀ ĐÚNG LỆNH CONFIG: Ép cấu hình sử dụng link http.kali.org/kali chính thức
           lb config --architecture amd64 \
                     --distribution kali-rolling \
                     --binary-images iso-hybrid \
@@ -57,21 +54,21 @@ jobs:
           mkdir -p live-build/config/package-lists
           echo "kali-desktop-xfce xfce4-terminal kali-themes lightdm network-manager-gnome firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-realtek firmware-brcm80211 wpasupplicant chromium" > live-build/config/package-lists/kali.list.chroot
           if [ -d config/includes.chroot ]; then
-            cp -r config/includes.chroot/* live-build/config/includes.chroot/
+            cp config/includes.chroot/* live-build/config/includes.chroot/
           fi
 
       - name: 5. Khởi chạy tiến trình biên dịch nén file ISO hoàn chỉnh
         run: |
           cd live-build
-          # Ép trực tiếp link mirror bootstrap một lần nữa ở lệnh build để debootstrap bắt buộc tuân thủ
-          sudo lb build --mirror-bootstrap "http://http.kali.org/kali"
+          # CHẠY LỆNH BUILD TRỌC: Không thêm bất kỳ tham số gạch gạch (--) nào ở đây để tránh lỗi 127/1
+          sudo lb build
 
       - name: 6. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản FULL VÁ KHỞI ĐỘNG LẠI! Đã xóa sạch cache kẹt của bộ build cũ, ép hệ thống chạy mượt mà ra file ISO."
+          body: "Bản FULL FIX chuẩn cú pháp! Hệ điều hành DuyKhanhOS v5 tự động nén đĩa hoàn toàn sạch sẽ."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
