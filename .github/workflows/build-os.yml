@@ -14,21 +14,29 @@ jobs:
       - name: 1. Kiểm tra mã nguồn kho lưu trữ DuyKhánh OS
         uses: actions/checkout@v4
 
-      - name: 2. Chạy Makefile đóng gói OS trong môi trường Docker Kali
+      - name: 2. Sơ chế cài đặt bộ lệnh Build và Make trên máy chủ gốc
         run: |
+          sudo apt-get update
+          sudo apt-get install -y make git
+
+      - name: 3. Chạy Makefile đóng gói OS trong môi trường Docker Kali
+        run: |
+          # Chạy Docker với việc cài đặt lệnh make và git nội bộ ngay khi vừa khởi hành vào lòng container
           docker run --privileged --rm \
             -v ${{ github.workspace }}:/__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
             -w /__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
             kalilinux/kali-rolling:latest bash -c "
-              git config --global --add safe.directory '*' && make build
+              apt-get update && apt-get install -y make git && \
+              git config --global --add safe.directory '*' && \
+              make build
             "
 
-      - name: 3. Tự động đẩy file ISO lên mục GitHub Releases
+      - name: 4. Tự động đẩy file ISO lên mục GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh kết hợp với MAKEFILE! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền phát sáng độc quyền."
+          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh kết hợp với MAKEFILE (Sửa triệt để lỗi 127)! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền phát sáng độc quyền đã sẵn sàng."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
