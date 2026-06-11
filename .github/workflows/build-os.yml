@@ -15,13 +15,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y live-build debootstrap git curl imagemagick
 
-      - name: Tải cấu hình gốc Kali Linux (Vượt lỗi Gitlab & Sửa link GitHub)
+      - name: Tải cấu hình gốc Kali Linux (Clone trực tiếp từ GitHub Kali Linux chính thức)
         run: |
-          # Tải trực tiếp file nén từ nhánh Github chính thức 
-          curl -Lk https://github.com -o kali-live.tar.gz
-          tar -xzf kali-live.tar.gz
-          mv kali-live-build-master live-build
+          # Clone kho mã nguồn chính thức của hãng Kali trên GitHub, cực kỳ ổn định và không sợ lỗi nén
+          git clone --depth=1 https://github.com build-scripts-repo
           
+          # Di chuyển thư mục chứa bộ công cụ live-build ra ngoài thành thư mục live-build
+          mv build-scripts-repo/kali-live live-build
+
       - name: Tự động vẽ Logo và Hình nền DuyKhanhOS
         run: |
           # Tạo thư mục chứa logo hệ thống trong gói build
@@ -59,7 +60,7 @@ jobs:
       - name: Tiến hành đóng gói file ISO (x64)
         run: |
           cd live-build
-          # Thực hiện đóng gói hệ thống với quyền tối cao
+          # Thực hiện đóng gói hệ thống với quyền root
           sudo ./build.sh --variant live-minimal --arch amd64 --verbose
 
       - name: Đẩy file ISO lên GitHub Releases
@@ -67,7 +68,7 @@ jobs:
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng tự động hoàn chỉnh! Sửa lỗi đường dẫn thành công. Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
+          body: "Bản sửa lỗi hoàn tất! Đã clone trực tiếp từ GitHub chính thức của Kali Linux. Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền độc quyền, tích hợp Chrome, Terminal và Wifi."
           files: live-build/images/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
