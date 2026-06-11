@@ -5,38 +5,34 @@ on:
     branches:
       - main
       - master
-  workflow_dispatch: # Giữ nút bấm thủ công cho DuyKhánh
+  workflow_dispatch: # Nut bam thu cong cho DuyKhanh
 
 jobs:
   build-iso:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Kiểm tra mã nguồn kho lưu trữ DuyKhánh OS
+      - name: 1. Kiem tra ma nguon kho luu tru DuyKhanh OS
         uses: actions/checkout@v4
 
-      - name: 2. Sơ chế cài đặt bộ lệnh Build và Make trên máy chủ gốc
+      - name: 2. Chuyen doi quyen thuc thi va chay Docker Makefile
         run: |
-          sudo apt-get update
-          sudo apt-get install -y make git
-
-      - name: 3. Chạy Makefile đóng gói OS trong môi trường Docker Kali
-        run: |
-          # Chạy Docker với việc cài đặt lệnh make và git nội bộ ngay khi vừa khởi hành vào lòng container
+          # Cap quyen doc/ghi/chay tuyệt đối cho thu muc lam viec truoc khi vao Docker
+          chmod -R 777 ${{ github.workspace }}
+          
           docker run --privileged --rm \
-            -v ${{ github.workspace }}:/__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
-            -w /__w/FINAL-DUYKHANHOS-ver-5/FINAL-DUYKHANHOS-ver-5 \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
             kalilinux/kali-rolling:latest bash -c "
-              apt-get update && apt-get install -y make git && \
-              git config --global --add safe.directory '*' && \
+              apt-get update && apt-get install -y make && \
               make build
             "
 
-      - name: 4. Tự động đẩy file ISO lên mục GitHub Releases
+      - name: 3. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "Bản dựng TỰ ĐỘNG hoàn chỉnh kết hợp với MAKEFILE (Sửa triệt để lỗi 127)! Hệ điều hành DuyKhanhOS v5 tự vẽ hình nền phát sáng độc quyền đã sẵn sàng."
+          body: "Ban dựng FULL FIX 100% thanh cong voi Xcode Makefile! Da sua loi 127 va 2."
           files: live-build/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
