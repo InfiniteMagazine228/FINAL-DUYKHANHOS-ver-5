@@ -20,7 +20,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux imagemagick fonts-liberation mtools grub-pc-bin grub-efi-amd64-bin dosfstools
-
       - name: 3. Su dung Docker lay loi Linux AMD64 (Chong tuyet doi loi 4.4MB)
         run: |
           mkdir -p source/iso/live source/squashfs output
@@ -32,11 +31,9 @@ jobs:
           # Cài đặt hạt nhân Kernel hệ thống tiêu chuẩn cho PC
           docker exec kalicore apt-get update
           docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd fastfetch
-
           # Trích xuất toàn bộ cấu trúc hệ thống ra máy ảo Actions
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
-
       - name: 4. Quét động tìm file cấu hình và cài đặt phần mềm từ Repo của bạn
         run: |
           CONFIG_FILE="config/packages.chroot"
@@ -49,12 +46,10 @@ jobs:
             echo "==> Khong tim thay file packages.chroot, su dung goi cuu ho mac dinh!"
             TARGET_PACKAGES="kali-desktop-xfce lightdm xfce4-terminal thunar network-manager-gnome firmware-linux chromium"
           fi
-
           # Ép cấu hình kho lưu trữ sử dụng nguồn HTTP chuẩn
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/apt/sources.list
-          deb http://kali.org kali-rolling main contrib non-free non-free-firmware
+          deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
           EOF"
-
           # Tiến hành chroot cài đặt phần mềm từ repo của bạn và bộ gõ tiếng Việt Unikey xịn
           sudo chroot source/squashfs /bin/bash -c "
             apt-get update -o Acquire::https::Verify-Peer=false -o Acquire::AllowInsecureRepositories=true || true
@@ -77,7 +72,6 @@ jobs:
             apt-get clean
             rm -rf /var/lib/apt/lists/*
           "
-
       - name: 5. Custom UI - Tu ve giao dien mang thuong hieu DuyKhanhDevelop
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
@@ -91,7 +85,6 @@ jobs:
           sudo chroot source/squashfs /bin/bash -c "
             echo 'xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
           "
-
       - name: 6. Khong che phim tat Zalo Web va file About.txt tu Repo ra Desktop
         run: |
           sudo mkdir -p source/squashfs/etc/skel/Desktop
@@ -101,7 +94,6 @@ jobs:
             echo "==> Dong bo thu muc chua file About.txt tu Repo vao Desktop"
             sudo cp -r "$ABOUT_DIR"/. source/squashfs/etc/skel/Desktop/
           fi
-
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/zalo.desktop
           [Desktop Entry]
           Name=Zalo Web
@@ -112,7 +104,6 @@ jobs:
           Categories=Network;
           EOF"
           sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
-
           # Cấu hình tự động bật bộ gõ tiếng Việt Unikey ngay khi khởi động
           sudo mkdir -p source/squashfs/etc/skel/.config/autostart
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
@@ -121,8 +112,7 @@ jobs:
           Exec=ibus-daemon -drxR
           Name=IBus Unikey
           EOF"
-
-      - name: 7. Tu tao cau truc BOOT GRUB va Cau hinh "Boot Han vao RAM" (Toram Mode)
+      - name: 7. Tu tao cau truc BOOT GRUB va Dong goi UEFI Core chuẩn xác
         run: |
           # Nén hệ thống tệp tin Live core thành file squashfs bằng gzip siêu tốc đa luồng
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp gzip -processors 4
@@ -130,12 +120,11 @@ jobs:
           # Đồng bộ hóa chính xác tệp tin nhân vmlinuz và initrd.img cho chuẩn PC
           sudo cp $(find source/squashfs/boot/ -name "vmlinuz*" | head -n 1) source/iso/live/vmlinuz
           sudo cp $(find source/squashfs/boot/ -name "initrd.img*" | head -n 1) source/iso/live/initrd.img
-
           # Tạo cấu trúc thư mục Boot GRUB tiêu chuẩn
           mkdir -p source/iso/boot/grub
           mkdir -p source/iso/EFI/boot
           
-          # CHÈN THAM SỐ toram ĐỂ ÉP HỆ THỐNG XẢ HẲN VÀO RAM KHI KHỞI ĐỘNG
+          # Cấu hình tệp tin menu GRUB tiêu chuẩn mồi nhân Linux động
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           insmod iso9660
           insmod linux
@@ -143,25 +132,24 @@ jobs:
           set timeout=5
           set default=0
           
-          menuentry 'FINAL-DUYKHANHOS v5 (Boot Han Vao RAM)' {
-              linux /live/vmlinuz boot=live components toram quiet splash
+          menuentry 'FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)' {
+              linux /live/vmlinuz boot=live components quiet splash
               initrd /live/initrd.img
           }
           EOF"
           
           # Biên dịch bộ mồi khởi động chuẩn UEFI PC (bootx64.efi)
           sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv part_msdos part_gpt fat ext2 linux boot configfile echo
-
           # Tạo ảnh phân vùng FAT efiboot.img chuẩn chỉnh cho UEFI Generation 2 của Hyper-V
           dd if=/dev/zero of=source/iso/boot/efiboot.img bs=1M count=4
           mkfs.vfat -F 12 source/iso/boot/efiboot.img
           mmd -i source/iso/boot/efiboot.img ::/EFI
           mmd -i source/iso/boot/efiboot.img ::/EFI/boot
           mcopy -i source/iso/boot/efiboot.img source/iso/EFI/boot/bootx64.efi ::/EFI/boot/bootx64.efi
-
       - name: 8. Dong goi cấu trúc ISO Hybrid xorriso (Ăn ngay trên Máy Thật và VM Hyper-V UEFI)
         run: |
           cd source/iso
+          # Ép phân vùng lai GPT + MBR để vừa chạy được trên máy thật Ventoy MBR, vừa chạy được trên VM Hyper-V UEFI
           sudo xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
@@ -170,16 +158,15 @@ jobs:
             -e boot/efiboot.img \
             -no-emul-boot -isohybrid-gpt-basdat \
             -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
-
       - name: 9. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 PHÁT HÀNH BẢN VÀO RAM: Đã kích hoạt Toram Mode thành công!
-            - Thêm tham số `toram` vào cấu hình `grub.cfg` giúp xả nén trực tiếp hệ thống vào bộ nhớ RAM khi vừa bấm Enter.
-            - Người dùng có thể rút hẳn USB cứu hộ ra ngay sau khi load xong Desktop mà không sợ lỗi treo máy.
+            🚀 ĐÃ ĐỒNG BỘ 100% CHO CẢ MÁY THẬT VÀ VM: Bản phát hành cứu hộ đa năng AMD64!
+            - Đưa lõi hệ điều hành về kiến trúc chuẩn **AMD64 / x86_64** chạy mượt mà trên mọi loại PC/Laptop và Máy ảo Hyper-V.
+            - Phân vùng lai ISO Hybrid ăn ngay trên các USB Ventoy định dạng MBR cũ lẫn firmware UEFI đời mới.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
