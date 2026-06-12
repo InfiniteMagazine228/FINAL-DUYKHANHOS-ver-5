@@ -16,27 +16,79 @@ jobs:
       - name: 1. Kich hoat he thong nhan dien
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu cau hinh GRUB va Dong goi ISO
+      - name: 2. Cai dat cac cong cu xu ly phoi va ve UI
         run: |
           sudo apt-get update
-          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux
+          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 ImageMagick
 
-      - name: 3. Tai phoi ISO Kali Live va Trích xuất bộ khởi động
+      - name: 3. Tai phoi ISO Kali Everything chinh hang (Su dung link Mirror)
         run: |
-          mkdir -p source/iso output mnt
-          # Tải bản ISO Live chính thức (chứa sẵn nhân GRUB tiêu chuẩn)
-          wget --retry-connrefused --tries=10 --waitretry=3 https://kali.org -O kali-live.iso
+          mkdir -p source/iso source/squashfs output mnt
+          # Dung aria2 de tai nhanh phoi tu link he thong may chu mirror chính thức
+          aria2c -x 16 -s 16 http://kali.org -o kali-everything.iso
           
-          # Gắn ổ ảo và sao chép cấu trúc để giữ nguyên phân vùng BOOT/GRUB
-          sudo mount -o loop kali-live.iso mnt
+          # Kiem tra dung luong file de chong loi tai nham file HTML nhu truoc
+          FILE_SIZE=$(stat -c%s "kali-everything.iso")
+          if [ $FILE_SIZE -lt 1000000000 ]; then
+            echo "Loi: File ISO tai ve qua nho, co the link mirror da thay doi!" && exit 1
+          fi
+
+      - name: 4. Gắn ổ đĩa ảo và Trích xuất lõi hệ thống
+        run: |
+          sudo mount -o loop kali-everything.iso mnt
           cp -a mnt/. source/iso/
           sudo umount mnt
-          rm kali-live.iso
+          rm kali-everything.iso
+          
+          # Bung file he thong dung luong lớn của Everything ra de chen UI va App
+          sudo unsquashfs -d source/squashfs source/iso/live/filesystem.squashfs
 
-      - name: 4. Dong goi lai va Tich hop GRUB Hybrid (UEFI + Legacy) cho Ventoy
+      - name: 5. Custom UI (Tu ve giao dien) va Thay ten he thong
         run: |
+          # 5.1 Thay đổi màn hình Boot GRUB (Hình nền lúc mở máy trong Ventoy)
+          # Tao mot hinh nen boot gradient doc quyen chu de FINAL-DUYKHANHOS v5
+          sudo convert -size 800x600 gradient:#0f2027-#203a43-#2c5364 source/iso/boot/grub/splash.png
+          
+          # Doi ten hien thi tren thanh chon Boot Menu tu Kali thanh ten OS cua ban
+          sudo sed -i 's/Kali GNU\/Linux/FINAL-DUYKHANHOS v5 (Cuu Ho Pro)/g' source/iso/boot/grub/grub.cfg
+          
+          # 5.2 Thay đổi hình nền Desktop mặc định của OS khi load xong
+          # Tao mot hinh nen chu de hacker cứu hộ màu xanh neon dập chữ tên bạn
+          sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
+          sudo convert -size 1920x1080 canvas:black -font Courier -pointsize 48 -fill "#00ff00" -draw "text 100,500 'FINAL-DUYKHANHOS v5 - WIN THE RESCUE'" source/squashfs/usr/share/backgrounds/custom/wallpaper.png
+          
+          # Ep he thong nhan hinh nen moi nay lam mac dinh cho moi user
+          sudo chroot source/squashfs /bin/bash -c "
+            echo 'xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
+          "
+
+      - name: 6. Cai dat Chrome, Zalo Web vao ben trong loi Everything
+        run: |
+          sudo chroot source/squashfs /bin/bash -c "
+            apt-get update
+            # Cai dat Chrome On-disk
+            wget -q https://google.com
+            apt-get install -y ./google-chrome-stable_current_amd64.deb
+            rm google-chrome-stable_current_amd64.deb
+            
+            # Tao file loi tat Zalo Web tren man hinh
+            mkdir -p /etc/skel/Desktop
+            echo -e '[Desktop Entry]\nName=Zalo Web\nComment=App cuu ho Zalo\nExec=google-chrome --no-sandbox https://zalo.me\nIcon=web-browser\nTerminal=false\nType=Application\nCategories=Network;' > /etc/skel/Desktop/zalo.desktop
+            chmod +x /etc/skel/Desktop/zalo.desktop
+            
+            apt-get clean
+            rm -rf /var/lib/apt/lists/*
+          "
+
+      - name: 7. Đóng gói lại nhân cấu trúc và Xuất bản file ISO Hybrid
+        run: |
+          sudo rm -f source/iso/live/filesystem.squashfs
+          # Nen lai file squashfs voi muc nen xz chat luong nhat
+          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz -e boot
+          printf $(du -sx --block-size=1 source/squashfs | cut -f1) > source/iso/live/filesystem.size
+          
+          # Tao ISO lai mang bo nap GRUB tuong thich cho ca UEFI va Legacy
           cd source/iso
-          # Dùng xorriso cấu hình lại bảng nạp MBR và GPT UEFI của GRUB
           sudo xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
@@ -50,12 +102,12 @@ jobs:
             -no-emul-boot -isohybrid-gpt-basdat \
             -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
 
-      - name: 5. Tu dong day file ISO len muc GitHub Releases
+      - name: 8. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "He dieu hanh cuu ho FINAL-DUYKHANHOS v5 da san sang! Tich hop san GRUB Bootloader, 100% Wifi tu nhan, Terminal, Firefox/Chrome va Zalo Web de cuu ho PC."
+          body: "He dieu hanh cuu ho FINAL-DUYKHANHOS v5 da san sang! Phôi Kali Everything đã được tùy biến UI thủ công 100%, tích hợp sẵn GRUB Bootloader, Wifi tự nhận, Chrome và Zalo Web tiện ích."
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
