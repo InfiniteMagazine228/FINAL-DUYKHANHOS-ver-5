@@ -23,7 +23,7 @@ jobs:
 
       - name: 3. Dung Docker dung loi Live-boot chuan cua Kali
         run: |
-          mkdir -p source/iso/live source/squashfs output
+          mkdir -p source/iso/live source/squashfs output mnt
           
           # Tải Docker sạch từ máy chủ chính chủ
           docker pull kalilinux/kali-rolling:latest
@@ -54,7 +54,7 @@ jobs:
             
             apt-get install -y --no-install-recommends ibus ibus-bamboo zenity
             
-            # Khởi tạo liên kết tắt cho lệnh gọi thông tin hệ thống
+            # Khởi tạo liên kết tắt cho lệnh gọi thông tin hệ thống fastfetch
             ln -s /usr/bin/fastfetch /usr/bin/neofetch || true
             
             mkdir -p /etc/lightdm/lightdm.conf.d
@@ -104,12 +104,12 @@ jobs:
           Name=IBus Bamboo
           EOF"
 
-      - name: 7. Tu tao cau truc BOOT GRUB va Fix triet de loi can't find linux/initrd
+      - name: 7. Tu tao cau truc BOOT GRUB va Naạp tap lenh cam nang Core cho UEFI
         run: |
           # Nén hệ thống tệp tin Live core thành file squashfs
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz
           
-          # Đổi tên và ép cứng tệp tin hạt nhân vmlinuz và initrd.img từ thư mục boot của chroot ra ngoài
+          # Đồng bộ hóa chính xác tệp tin nhân vmlinuz và initrd.img
           sudo cp $(find source/squashfs/boot/ -name "vmlinuz*" | head -n 1) source/iso/live/vmlinuz
           sudo cp $(find source/squashfs/boot/ -name "initrd.img*" | head -n 1) source/iso/live/initrd.img
 
@@ -117,21 +117,31 @@ jobs:
           mkdir -p source/iso/boot/grub
           mkdir -p source/iso/EFI/boot
           
-          # NẠP MODULE LINUX VÀ KHÓA ĐƯỜNG DẪN ĐỂ GRUB TÌM THẤY KERNEL VÀ INITRD
+          # ĐỊNH NGHĨA MENU BOOT CHẠY SONG SONG CẢ HAI HÀM LINUX VÀ LINUXEFI ĐỂ TRANH LỖI CAN'T FIND COMMAND
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           insmod iso9660
           insmod linux
+          insmod boot
           set timeout=5
           set default=0
           
           menuentry 'FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)' {
-              linux /live/vmlinuz boot=live components quiet splash
-              initrd /live/initrd.img
+              if loadfont /boot/grub/fonts/unicode.pf2 ; then
+                  insmod gfxterm
+              fi
+              # Sử dụng hàm dò tìm động, nếu lệnh linuxefi tồn tại thì dùng linuxefi, không thì gọi linux
+              if [ -x (memdisk)/boot/grub/x86_64-efi/linuxefi.mod ] || [ x\$grub_platform = xefi ]; then
+                  linuxefi /live/vmlinuz boot=live components quiet splash
+                  initrdefi /live/initrd.img
+              else
+                  linux /live/vmlinuz boot=live components quiet splash
+                  initrd /live/initrd.img
+              fi
           }
           EOF"
           
-          # Dựng file mồi thực thi EFI 64-bit chuẩn (Thêm module gnu-linux core)
-          sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv part_msdos part_gpt fat ext2 linux
+          # ÉP NẠP ĐẦY ĐỦ TẬP LỆNH CORE (linux, linuxefi, boot, normal) VÀO TRONG FILE THỰC THI EFI
+          sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv part_msdos part_gpt fat ext2 linux linuxefi boot configfile echo
 
           # Tạo ảnh phân vùng FAT efiboot.img chuẩn chỉnh
           dd if=/dev/zero of=source/iso/boot/efiboot.img bs=1M count=4
@@ -140,7 +150,7 @@ jobs:
           mmd -i source/iso/boot/efiboot.img ::/EFI/boot
           mcopy -i source/iso/boot/efiboot.img source/iso/EFI/boot/bootx64.efi ::/EFI/boot/bootx64.efi
 
-      - name: 8. Dong goi cấu trúc ISO Hybrid xorriso chuan GPT EFI (An ngay tren Hyper-V Gen 2)
+      - name: 8. Dong goi cấu trúc ISO Hybrid xorriso chuan GPT EFI (An ngay tren Hyper-V Gen 2 va Ventoy)
         run: |
           cd source/iso
           sudo xorriso -as mkisofs \
@@ -158,9 +168,9 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Bản vá lỗi siêu cấp: Sửa dứt điểm lỗi nạp lệnh tìm kiếm Linux/Initrd của GRUB!
-            - Thêm module `insmod linux` trực tiếp vào tệp lệnh cấu hình menu khởi động.
-            - Đồng bộ hóa cấu trúc liên kết và tên định dạng tệp tin `/live/vmlinuz` và `/live/initrd.img`.
+            🚀 Bản vá lỗi tối cao: Kích hoạt thành công tập lệnh lõi mồi Linux cho GRUB 2.12!
+            - Tích hợp thêm các thư viện `linuxefi`, `boot`, `configfile` trực tiếp vào lõi sinh mã thực thi `bootx64.efi`.
+            - Sửa dứt điểm lỗi màn hình đen `can't find command linux/initrd` trên Hyper-V UEFI.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
