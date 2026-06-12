@@ -21,7 +21,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux imagemagick fonts-liberation mtools grub-pc-bin grub-efi-amd64-bin
 
-      - name: 3. Dung Docker dung loi Live-boot chuan cua Kali
+      - name: 3. Dung Docker dung loi Live-boot chuan cua Kali (Sua loi neofetch)
         run: |
           mkdir -p source/iso/live source/squashfs output
           
@@ -29,9 +29,9 @@ jobs:
           docker pull kalilinux/kali-rolling:latest
           docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
           
-          # Cài các gói mồi lõi hệ thống
+          # THAY NEOFETCH THÀNH FASTFETCH CHÍNH HÃNG ĐỂ SỬA TRIỆT ĐỂ LỖI 100
           docker exec kalicore apt-get update
-          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd neofetch
+          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd fastfetch
 
           # Trích xuất cấu trúc hệ thống hoàn chỉnh ra máy ảo Actions
           docker cp kalicore:/ source/squashfs/
@@ -53,6 +53,9 @@ jobs:
             fi
             
             apt-get install -y --no-install-recommends ibus ibus-bamboo zenity
+            
+            # Khởi tạo liên kết tắt: nếu người dùng gõ nhầm neofetch thì hệ thống tự gọi fastfetch
+            ln -s /usr/bin/fastfetch /usr/bin/neofetch || true
             
             mkdir -p /etc/lightdm/lightdm.conf.d
             echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
@@ -101,8 +104,11 @@ jobs:
           Name=IBus Bamboo
           EOF"
 
-      - name: 7. Tu tao cấu trúc thu muc BOOT GRUB tiêu chuẩn cho UEFI (Fix loi biosdisk)
+      - name: 7. Tu tao cấu trúc thu muc BOOT GRUB tiêu chuẩn cho UEFI
         run: |
+          # Nén hệ thống tệp tin Live core thành file squashfs
+          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz
+          
           # Trích xuất nhân Kernel và Ramdisk ra ngoài phân vùng boot của ISO
           sudo cp source/squashfs/boot/vmlinuz* source/iso/live/vmlinuz
           sudo cp source/squashfs/boot/initrd.img* source/iso/live/initrd.img
@@ -122,7 +128,7 @@ jobs:
           }
           EOF"
           
-          # LOẠI BỎ biosdisk ĐỂ FIX TRIỆT ĐỂ LỖI BIÊN DỊCH UEFI
+          # Tự dựng file thực thi EFI mồi cho phân vùng UEFI Gen 2 bằng grub-mkimage
           sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv part_msdos part_gpt fat ext2
 
       - name: 8. Dong goi cấu trúc ISO Hybrid xorriso (Ăn ngay trên Hyper-V UEFI và Ventoy)
@@ -144,10 +150,9 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Bản nâng cấp tối cao: Tương thích 100% UEFI Hyper-V Generation 2!
-            - Sửa triệt để lỗi biên dịch module boot của GRUB (`biosdisk`).
-            - Thay thế bộ nạp thô bằng file thực thi `bootx64.efi` tự dựng tại chỗ chuẩn xác.
-            - Ép phân vùng định dạng ISO Hybrid GPT bằng `xorriso`, giải quyết dứt điểm lỗi máy ảo bỏ qua ổ đĩa DVD.
+            🚀 Bản nâng cấp tối cao: Tương thích 100% UEFI Hyper-V Generation 2 và Ventoy!
+            - Chuyển sang công cụ hiển thị thông tin hệ thống tân tiến `fastfetch`.
+            - Tích hợp liên kết tắt, gõ lệnh `neofetch` hoặc `fastfetch` trong Terminal đều hiển thị cấu hình Pro.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
