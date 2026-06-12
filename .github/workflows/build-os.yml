@@ -16,14 +16,19 @@ jobs:
       - name: 1. Kich hoat va Tai ma nguon tu Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet va Keyring Kali (Chong loi 404 / precise)
+      - name: 2. Cai dat cac cong cu can thiet va Keyring Kali (Sua loi curl exit code 23)
         run: |
           sudo apt-get update
           sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation debootstrap live-build curl
           
-          # Tải và nạp kho khóa bảo mật chính chủ của Kali để vượt qua bộ lọc Ubuntu
-          curl -LO http://kali.org || curl -LO https://kali.org
-          sudo dpkg -i kali-archive-keyring*_all.deb || true
+          # Thêm trực tiếp nguồn Kali vào danh sách phụ để cài gói keyring chính chủ, không tải thủ công bằng curl
+          echo "deb http://kali.org kali-rolling main contrib non-free non-free-firmware" | sudo tee /etc/apt/sources.list.d/kali.list
+          sudo apt-get update --allow-insecure-repositories || true
+          sudo apt-get install -y --allow-unauthenticated kali-archive-keyring
+          
+          # Xóa bỏ nguồn phụ để tránh xung đột hệ thống sau khi đã nạp xong khóa bảo mật
+          sudo rm -f /etc/apt/sources.list.d/kali.list
+          sudo apt-get update
 
       - name: 3. Ep cau hinh thiet lap chuan Mirror Kali Linux (Bypass tuyet doi 404)
         run: |
@@ -35,9 +40,9 @@ jobs:
             --architectures amd64 \
             --bootstrap debootstrap \
             --distribution kali-rolling \
-            --mirror-bootstrap http://http.kali.org/kali \
-            --mirror-chroot http://http.kali.org/kali \
-            --mirror-binary http://http.kali.org/kali \
+            --mirror-bootstrap http://kali.org \
+            --mirror-chroot http://kali.org \
+            --mirror-binary http://kali.org \
             --binary-images iso-hybrid \
             --memtest none
 
@@ -120,7 +125,7 @@ jobs:
           name: FINAL-DUYKHANHOS-ver-5
           body: |
             🚀 Hệ điều hành cứu hộ thương hiệu DuyKhanhDevelop đã hoàn tất chu kỳ đóng gói!
-            - Vá triệt để 100% lỗi kho lưu trữ 404 cũ.
+            - Sửa triệt để lỗi curl sập tiến trình ghi dữ liệu (Exit code 23).
             - Tích hợp sẵn bộ khởi động GRUB Bootloader gốc ăn ngay trên Ventoy (UEFI & Legacy).
             - Đã tích hợp bộ gõ tiếng Việt mặc định (EVKey/Bamboo phong cách) chạy tự động.
             - Cài sẵn Chrome, phím tắt Zalo Web nhanh chóng và UI hình nền tự vẽ.
