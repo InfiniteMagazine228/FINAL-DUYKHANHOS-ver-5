@@ -52,7 +52,7 @@ jobs:
 
           # Ép cấu hình kho lưu trữ sử dụng nguồn HTTP chuẩn
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/apt/sources.list
-          deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
+          deb http://kali.org kali-rolling main contrib non-free non-free-firmware
           EOF"
 
           # Tiến hành chroot cài đặt phần mềm từ repo của bạn và bộ gõ tiếng Việt Unikey xịn
@@ -122,7 +122,7 @@ jobs:
           Name=IBus Unikey
           EOF"
 
-      - name: 7. Tu tao cau truc BOOT GRUB va Dong goi UEFI Core chuẩn xác
+      - name: 7. Tu tao cau truc BOOT GRUB va Cau hinh "Boot Han vao RAM" (Toram Mode)
         run: |
           # Nén hệ thống tệp tin Live core thành file squashfs bằng gzip siêu tốc đa luồng
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp gzip -processors 4
@@ -135,7 +135,7 @@ jobs:
           mkdir -p source/iso/boot/grub
           mkdir -p source/iso/EFI/boot
           
-          # Cấu hình tệp tin menu GRUB tiêu chuẩn mồi nhân Linux động
+          # CHÈN THAM SỐ toram ĐỂ ÉP HỆ THỐNG XẢ HẲN VÀO RAM KHI KHỞI ĐỘNG
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           insmod iso9660
           insmod linux
@@ -143,8 +143,8 @@ jobs:
           set timeout=5
           set default=0
           
-          menuentry 'FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)' {
-              linux /live/vmlinuz boot=live components quiet splash
+          menuentry 'FINAL-DUYKHANHOS v5 (Boot Han Vao RAM)' {
+              linux /live/vmlinuz boot=live components toram quiet splash
               initrd /live/initrd.img
           }
           EOF"
@@ -162,7 +162,6 @@ jobs:
       - name: 8. Dong goi cấu trúc ISO Hybrid xorriso (Ăn ngay trên Máy Thật và VM Hyper-V UEFI)
         run: |
           cd source/iso
-          # Ép phân vùng lai GPT + MBR để vừa chạy được trên máy thật Ventoy MBR, vừa chạy được trên VM Hyper-V UEFI
           sudo xorriso -as mkisofs \
             -iso-level 3 \
             -full-iso9660-filenames \
@@ -178,9 +177,9 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 ĐÃ ĐỒNG BỘ 100% CHO CẢ MÁY THẬT VÀ VM: Bản phát hành cứu hộ đa năng AMD64!
-            - Đưa lõi hệ điều hành về kiến trúc chuẩn **AMD64 / x86_64** chạy mượt mà trên mọi loại PC/Laptop và Máy ảo Hyper-V.
-            - Phân vùng lai ISO Hybrid ăn ngay trên các USB Ventoy định dạng MBR cũ lẫn firmware UEFI đời mới.
+            🚀 PHÁT HÀNH BẢN VÀO RAM: Đã kích hoạt Toram Mode thành công!
+            - Thêm tham số `toram` vào cấu hình `grub.cfg` giúp xả nén trực tiếp hệ thống vào bộ nhớ RAM khi vừa bấm Enter.
+            - Người dùng có thể rút hẳn USB cứu hộ ra ngay sau khi load xong Desktop mà không sợ lỗi treo máy.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
