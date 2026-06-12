@@ -16,17 +16,46 @@ jobs:
       - name: 1. Kich hoat he thong nhan dien
         uses: actions/checkout@v4
 
-      - name: 2. Tao thu muc va Tai phoi ISO Live x64 chinh hang Kali Linux
+      - name: 2. Cai dat cac cong cu cau hinh GRUB va Dong goi ISO
         run: |
-          mkdir -p output
-          wget --retry-connrefused --tries=10 --waitretry=3 https://kali.org -O output/FINAL-DUYKHANHOS-ver-5.iso
+          sudo apt-get update
+          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux
 
-      - name: 3. Tu dong day file ISO len muc GitHub Releases
+      - name: 3. Tai phoi ISO Kali Live va Trích xuất bộ khởi động
+        run: |
+          mkdir -p source/iso output mnt
+          # Tải bản ISO Live chính thức (chứa sẵn nhân GRUB tiêu chuẩn)
+          wget --retry-connrefused --tries=10 --waitretry=3 https://kali.org -O kali-live.iso
+          
+          # Gắn ổ ảo và sao chép cấu trúc để giữ nguyên phân vùng BOOT/GRUB
+          sudo mount -o loop kali-live.iso mnt
+          cp -a mnt/. source/iso/
+          sudo umount mnt
+          rm kali-live.iso
+
+      - name: 4. Dong goi lai va Tich hop GRUB Hybrid (UEFI + Legacy) cho Ventoy
+        run: |
+          cd source/iso
+          # Dùng xorriso cấu hình lại bảng nạp MBR và GPT UEFI của GRUB
+          sudo xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS_V5" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -isohybrid-mbr isolinux/isolinux.bin \
+            -eltorito-alt-boot \
+            -e boot/grub/efi.img \
+            -no-emul-boot -isohybrid-gpt-basdat \
+            -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
+
+      - name: 5. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
-          body: "He dieu hanh cuu ho FINAL-DUYKHANHOS v5 da san sang! Tich hop san 100% Wifi tu nhan, Terminal, Firefox/Chrome va Zalo Web de cuu ho PC."
+          body: "He dieu hanh cuu ho FINAL-DUYKHANHOS v5 da san sang! Tich hop san GRUB Bootloader, 100% Wifi tu nhan, Terminal, Firefox/Chrome va Zalo Web de cuu ho PC."
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
