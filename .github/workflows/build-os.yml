@@ -16,118 +16,152 @@ jobs:
       - name: 1. Kich hoat va Tai ma nguon tu Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet va Keyring Kali (Fix loi curl exit code 23)
+      - name: 2. Cai dat cac cong cu can thiet de va GRUB va UI
         run: |
           sudo apt-get update
-          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation debootstrap live-build wget
+          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation wget curl
 
-          # Sử dụng wget -O để ép tên file cứng, sửa triệt để lỗi curl không ghi được đĩa
-          wget --retry-connrefused --tries=5 -O kali-keyring.deb http://kali.org || \
-          wget --retry-connrefused --tries=5 -O kali-keyring.deb http://kali.org
-          
-          # Tiến hành cài đặt tệp xác thực vừa tải về
-          sudo dpkg -i kali-keyring.deb || true
-          rm -f kali-keyring.deb
-
-      - name: 3. Ep cau hinh thiet lap chuan Mirror Kali Linux (Bypass tuyet doi 404)
+      - name: 3. Tai phoi ISO Kali Live goc va Trich xuat bo khoi dong GRUB
         run: |
-          rm -rf .build/ config/
+          mkdir -p source/iso source/squashfs output mnt
+          # Tải phôi ISO live x64 chính thức có sẵn lõi boot GRUB tương thích tốt với Ventoy
+          aria2c -x 16 -s 16 https://kali.org -o kali-live.iso
           
-          # Ép tham số trỏ thẳng về hệ thống Mirror lưu trữ thực sự (http.kali.org/kali)
-          lb config \
-            --apt-indices false \
-            --architectures amd64 \
-            --bootstrap debootstrap \
-            --distribution kali-rolling \
-            --mirror-bootstrap http://kali.org \
-            --mirror-chroot http://kali.org \
-            --mirror-binary http://kali.org \
-            --binary-images iso-hybrid \
-            --memtest none
-
-          # Khởi tạo các thư mục chứa dữ liệu cấu hình người dùng
-          mkdir -p config/includes.chroot/etc/skel/Desktop
-          mkdir -p config/includes.chroot/usr/share/backgrounds/custom
-          mkdir -p config/hooks/live
-
-      - name: 4. Doc va nạp lai file packages.chroot hien tai cua ban
-        run: |
-          # Đồng bộ file packages.chroot ngày hôm qua của bạn vào hệ thống lõi
-          if [ -f "packages.chroot" ]; then
-            cp packages.chroot config/package-lists/desktop.list.chroot
-          elif [ -f "config/packages.chroot" ]; then
-            cp config/packages.chroot config/package-lists/desktop.list.chroot
-          else
-            # Gói phần mềm nền tảng cứu hộ XFCE siêu nhẹ nếu file bị trống
-            echo "kali-desktop-xfce kali-root-login xfce4-terminal firefox-esr network-manager-gnome wireless-tools" > config/package-lists/desktop.list.chroot
+          # Kiểm tra dung lượng để chặn tuyệt đối lỗi tải nhầm file HTML 50KB cũ
+          FILE_SIZE=$(stat -c%s "kali-live.iso")
+          if [ $FILE_SIZE -lt 1000000000 ]; then
+            echo "Loi: File ISO tai ve bi thieu dung luong!" && exit 1
           fi
+
+          # Gắn ổ đĩa ảo và trích xuất cấu trúc phân vùng BOOT/GRUB
+          sudo mount -o loop kali-live.iso mnt
+          cp -a mnt/. source/iso/
+          sudo umount mnt
+          rm -f kali-live.iso
           
-          # Thêm các gói thư viện cần thiết cho bộ gõ tiếng Việt vào danh sách cài đặt
-          echo " ibus ibus-bamboo zenity" >> config/package-lists/desktop.list.chroot
+          # Giải nén hệ thống tệp tin Live để bắt đầu chèn cấu hình của bạn
+          sudo unsquashfs -d source/squashfs source/iso/live/filesystem.squashfs
+
+      - name: 4. Dong bo file packages.chroot va cai dat phan mem tu repo cua ban
+        run: |
+          # Đọc file packages.chroot từ thư mục config hiện tại trên repo của bạn để ép cài đặt vào lõi OS
+          TARGET_PACKAGES=""
+          if [ -f "config/packages.chroot" ]; then
+            # Đọc file, bỏ qua các dòng trống hoặc dòng ghi chú có dấu #
+            TARGET_PACKAGES=$(grep -v '^#' config/packages.chroot | grep -v '^$' | tr '\n' ' ')
+          fi
+
+          # Thực hiện cài đặt các ứng dụng yêu cầu trong môi trường chroot độc lập
+          sudo chroot source/squashfs /bin/bash -c "
+            apt-get update
+            # Cài đặt danh sách phần mềm từ repo của bạn (bao gồm xfce4, network-manager, firmware wifi, chromium...)
+            if [ ! -z '$TARGET_PACKAGES' ]; then
+              apt-get install -y $TARGET_PACKAGES
+            fi
+            
+            # Cài đặt thêm bộ gõ tiếng Việt IBus-Bamboo cho hệ thống cứu hộ
+            apt-get install -y ibus ibus-bamboo zenity
+            
+            # Khử lỗi màn hình đăng nhập LightDM, ép hệ thống tự động đăng nhập thẳng vào Desktop với quyền Root
+            mkdir -p /etc/lightdm/lightdm.conf.d
+            echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
+            
+            apt-get clean
+            rm -rf /var/lib/apt/lists/*
+          "
 
       - name: 5. Custom UI - Tu ve giao dien mang thuong hieu DuyKhanhDevelop
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
           
-          # Tự vẽ hình nền Desktop cứu hộ đóng dấu bản quyền tác giả
-          convert -size 1920x1080 canvas:#05050a \
+          # 5.1 Tự vẽ màn hình khởi động Boot GRUB (Hiển thị mượt mà trên giao diện Ventoy)
+          sudo convert -size 800x600 gradient:#0d0d0d-#1a1a2e \
+            -font "$FONT_PATH" -pointsize 36 -fill "#00ffcc" -gravity center -draw "text 0,-40 'FINAL-DUYKHANHOS v5'" \
+            -font "$FONT_PATH" -pointsize 22 -fill "#ffffff" -gravity center -draw "text 0,20 'Powered by DuyKhanhDevelop'" \
+            source/iso/boot/grub/splash.png
+          
+          # Ép cấu hình thay tên hiển thị trên thanh chọn Boot Menu thành tên OS của bạn
+          sudo sed -i 's/Kali GNU\/Linux/FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)/g' source/iso/boot/grub/grub.cfg
+          
+          # 5.2 Tự vẽ hình nền Desktop chính khi nạp vào bên trong hệ điều hành
+          sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
+          sudo convert -size 1920x1080 canvas:#05050a \
             -font "$FONT_PATH" -pointsize 56 -fill "#00ff00" -gravity center -draw "text 0,-60 'FINAL-DUYKHANHOS v5'" \
             -font "$FONT_PATH" -pointsize 32 -fill "#ffffff" -gravity center -draw "text 0,20 'WIN THE RESCUE SYSTEM'" \
             -font "$FONT_PATH" -pointsize 26 -fill "#888888" -gravity SouthEast -draw "text 50,50 'Author: DuyKhanhDevelop'" \
-            config/includes.chroot/usr/share/backgrounds/custom/wallpaper.png
-
-          # Ép cấu hình nạp hình nền này khi tài khoản load vào desktop máy tính
-          echo 'xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/custom/wallpaper.png' >> config/includes.chroot/etc/skel/.bashrc
-
-      - name: 6. Khong che phim tat Zalo Web va tu dong nhan Bo go Tieng Viet EVKey/Bamboo
-        run: |
-          # 6.1 Tạo lối tắt ứng dụng Zalo Web ra ngoài màn hình chính
-          echo -e '[Desktop Entry]\nName=Zalo Web\nComment=App cuu ho Zalo\nExec=google-chrome --no-sandbox https://zalo.me\nIcon=web-browser\nTerminal=false\nType=Application\nCategories=Network;' > config/includes.chroot/etc/skel/Desktop/zalo.desktop
-          chmod +x config/includes.chroot/etc/skel/Desktop/zalo.desktop
-
-          # 6.2 Cấu hình khởi động tự động bộ gõ tiếng Việt ngay khi khởi động OS
-          mkdir -p config/includes.chroot/etc/skel/.config/autostart
-          echo -e '[Desktop Entry]\nType=Application\nExec=ibus-daemon -drxR\nHidden=false\nNoDisplay=false\nName=IBus Bamboo\nComment=Bo go tieng Viet' > config/includes.chroot/etc/skel/.config/autostart/ibus.desktop
-
-      - name: 7. Chen Script su dung Mirror cai dat Chrome va Kich hoat Bamboo Tieng Viet
-        run: |
-          cat << 'EOF' > config/hooks/live/install-apps.chroot
-          #!/bin/sh
-          # Sử dụng mirror chuẩn để cập nhật cơ sở dữ liệu bên trong môi trường chroot
-          apt-get update
-          apt-get install -y wget curl
+            source/squashfs/usr/share/backgrounds/custom/wallpaper.png
           
-          # Tải và nạp Chrome ổn định trực tiếp từ máy chủ Google bằng wget chỉ định tên file cụ thể
-          wget -q https://google.com -O google-chrome.deb
-          apt-get install -y ./google-chrome.deb
-          rm -f google-chrome.deb
+          # Thiết lập cấu hình hệ thống tự nhận diện tấm ảnh nền này làm mặc định cho người dùng
+          sudo chroot source/squashfs /bin/bash -c "
+            echo 'xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
+          "
+
+      - name: 6. Khong che phim tat Zalo Web va file About.txt từ Repo ra Desktop
+        run: |
+          # Đồng bộ thư mục chứa file About.txt có sẵn từ Repo của bạn vào màn hình chính của hệ thống cứu hộ
+          sudo mkdir -p source/squashfs/etc/skel/Desktop
+          if [ -d "config/includes.chroot/etc/skel/Desktop" ]; then
+            sudo cp -r config/includes.chroot/etc/skel/Desktop/. source/squashfs/etc/skel/Desktop/
+          fi
+
+          # Tạo phím tắt Zalo Web chạy bằng Chromium (đã khai báo trong packages.chroot của bạn) để tối ưu dung lượng
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/zalo.desktop
+          [Desktop Entry]
+          Name=Zalo Web
+          Comment=App cuu ho Zalo
+          Exec=chromium --no-sandbox https://zalo.me
+          Icon=web-browser
+          Terminal=false
+          Type=Application
+          Categories=Network;
+          EOF"
+          sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
+
+          # Cấu hình tự động bật bộ gõ tiếng Việt ngay khi người dùng load vào Desktop
+          sudo mkdir -p source/squashfs/etc/skel/.config/autostart
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
+          [Desktop Entry]
+          Type=Application
+          Exec=ibus-daemon -drxR
+          Hidden=false
+          NoDisplay=false
+          Name=IBus Bamboo
+          Comment=Bo go tieng Viet
+          EOF"
+
+      - name: 7. Dong goi lai nhan cau truc va Xuat ban file ISO Hybrid mang bo khoi dong GRUB
+        run: |
+          sudo rm -f source/iso/live/filesystem.squashfs
+          # Nén lại hệ thống tệp tin mới với thuật toán nén XZ hiệu năng cao nhất
+          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz -e boot
+          printf $(du -sx --block-size=1 source/squashfs | cut -f1) > source/iso/live/filesystem.size
           
-          # Kích hoạt bộ gõ tiếng Việt làm kiểu gõ mặc định trên hệ thống cứu hộ
-          ibus write-cache || true
-          EOF
-          chmod +x config/hooks/live/install-apps.chroot
+          # Đóng gói bằng xorriso nạp MBR và GPT UEFI, giúp Ventoy nhận diện lõi GRUB gốc ổn định 100%
+          cd source/iso
+          sudo xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS_V5" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -isohybrid-mbr isolinux/isolinux.bin \
+            -eltorito-alt-boot \
+            -e boot/grub/efi.img \
+            -no-emul-boot -isohybrid-gpt-basdat \
+            -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
 
-      - name: 8. Tien hanh bien dich he thong (Kali Live Build)
-        run: |
-          # Lệnh khởi chạy biên dịch chính chủ để nhào nặn file ISO có sẵn GRUB 2.14 cho Ventoy
-          sudo lb build
-
-      - name: 9. Sap xep va Doi ten file ISO dau ra
-        run: |
-          mkdir -p output
-          find . -maxdepth 1 -name "*.iso" -exec mv {} output/FINAL-DUYKHANHOS-ver-5.iso \;
-
-      - name: 10. Tu dong day file ISO len muc GitHub Releases
+      - name: 8. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Hệ điều hành cứu hộ thương hiệu DuyKhanhDevelop đã hoàn tất chu kỳ đóng gói thành công 100%!
-            - Sửa dứt điểm lỗi `curl (23)` bằng cơ chế bắt buộc tên tệp đầu ra thông qua `wget -O`.
-            - Tích hợp sẵn lõi khởi động GRUB chuẩn chỉnh ăn ngay trên Ventoy (UEFI & Legacy BIOS).
-            - Tự khởi động bộ gõ tiếng Việt (phong cách EVKey/Bamboo) ngay từ màn hình Desktop.
-            - Tích hợp Google Chrome, lối tắt Zalo Web trực quan và giao diện UI tự vẽ chuyên nghiệp.
+            🚀 Hệ điều hành cứu hộ thương hiệu DuyKhanhDevelop đã hoàn chỉnh thành công 100%!
+            - Sửa triệt để lỗi sập link mirror bằng cơ chế đóng gói lai trực tiếp trên phôi gốc Live-system.
+            - Nạp bộ khởi động GRUB chuẩn chỉnh, boot mượt mà trên Ventoy (UEFI + Legacy BIOS).
+            - Đọc chuẩn danh sách ứng dụng trong packages.chroot (XFCE, Drivers Wifi, Chromium...).
+            - Đồng bộ hóa file About.txt có sẵn trên repo ra ngoài Desktop, có bộ gõ tiếng Việt tự khởi động.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
