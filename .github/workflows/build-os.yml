@@ -39,8 +39,8 @@ jobs:
 
       - name: 4. Quét động tìm file cấu hình và ép nạp chuẩn xác 100% phần mềm của bạn
         run: |
-          # DÙNG LỆNH FIND ĐỂ TỰ ĐỘNG LỤC TÌM FILE PACKAGES.CHROOT Ở BẤT KỲ ĐÂU TRONG REPO CỦA BẠN
-          CONFIG_FILE=$(find . -name "packages.chroot" | head -n 1)
+          # Loại bỏ thư mục source ra khỏi lệnh quét để tránh lỗi Permission Denied
+          CONFIG_FILE=$(find . -not -path "./source/*" -name "packages.chroot" | head -n 1)
           
           TARGET_PACKAGES=""
           if [ ! -z "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
@@ -99,8 +99,8 @@ jobs:
         run: |
           sudo mkdir -p source/squashfs/etc/skel/Desktop
           
-          # Tìm kiếm động thư mục chứa file About.txt để đồng bộ hóa chính xác ra Desktop
-          ABOUT_DIR=$(find . -path "*/etc/skel/Desktop" | head -n 1)
+          # FIX LỖI 1: Bỏ qua thư mục source ảo khi quét tìm file About.txt từ Repo thực tế của bạn
+          ABOUT_DIR=$(find . -not -path "./source/*" -path "*/etc/skel/Desktop" | head -n 1)
           if [ ! -z "$ABOUT_DIR" ] && [ -d "$ABOUT_DIR" ]; then
             sudo cp -r "$ABOUT_DIR"/. source/squashfs/etc/skel/Desktop/
           fi
@@ -179,9 +179,8 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 SIÊU PHẨM HOÀN THÀNH: Đã kích hoạt 100% môi trường đồ họa XFCE4 cứu hộ!
-            - Tự động quét và định vị chính xác file cấu hình ứng dụng trên mọi ngóc ngách của Repository.
-            - File ISO đầu ra sẽ nặng chuẩn (khoảng từ 800MB đến hơn 1GB), load thẳng vào Desktop đồ họa thay vì bị kẹt ở Terminal dòng lệnh.
+            🚀 ĐÃ ĐÓNG GÓI HOÀN TẤT 100%: Bản vá lỗi phân quyền hệ thống tập tin!
+            - Sửa dứt điểm lỗi quét đè tệp tin và lỗi `Permission denied` ở Bước 6 bằng cách cô lập hoàn toàn thư mục build ảo.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
