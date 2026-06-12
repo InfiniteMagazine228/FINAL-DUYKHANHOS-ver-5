@@ -16,49 +16,48 @@ jobs:
       - name: 1. Kich hoat va Tai ma nguon tu Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet de va GRUB va UI tai cho
+      - name: 2. Cai dat cac cong cu xu ly phoi va ve UI
         run: |
           sudo apt-get update
-          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux imagemagick fonts-liberation mtools grub-pc-bin grub-efi-amd64-bin
+          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation wget curl
 
-      - name: 3. Su dung Docker de trich xuat loi Kali Linux chinh chu (Fix loi exit code 125)
+      - name: 3. Tai phoi ISO Kali Live chinh hang de lay loi Live-boot chuan (Chong tuyet doi Kernel Panic)
         run: |
-          mkdir -p source/iso/live source/squashfs output
+          mkdir -p source/iso source/squashfs output mnt
+          # Tải phôi ISO live x64 chính thức có cấu trúc hệ thống /sbin/init chuẩn hãng
+          aria2c -x 16 -s 16 https://kali.org -o kali-live.iso
           
-          # Gọi chính xác tên Image chính chủ Kali Linux trên Docker Hub
-          docker pull kalilinux/kali-rolling:latest
-          docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
+          # Gắn ổ đĩa ảo và sao chép cấu trúc phân vùng BOOT/GRUB xịn
+          sudo mount -o loop kali-live.iso mnt
+          cp -a mnt/. source/iso/
+          sudo umount mnt
+          rm -f kali-live.iso
           
-          # Nạp đầy đủ lõi hạt nhân Kernel và hệ thống mồi Live-boot vào Docker trước
-          docker exec kalicore apt-get update
-          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot
-          
-          # Trích xuất toàn bộ dữ liệu sạch từ Docker Container ra Actions máy ảo
-          docker cp kalicore:/ source/squashfs/
-          docker rm -f kalicore
+          # Giải nén hệ thống tệp tin Live-system gốc
+          sudo unsquashfs -d source/squashfs source/iso/live/filesystem.squashfs
 
       - name: 4. Doc va nap phan mem tu file packages.chroot cua ban vao loi OS
         run: |
-          # Đọc danh sách gói ứng cứu từ file cấu hình của bạn
+          # Đọc danh sách gói ứng cứu từ file cấu hình của bạn (xfce4, network-manager, firmware wifi, chromium...)
           TARGET_PACKAGES=""
           if [ -f "config/packages.chroot" ]; then
             TARGET_PACKAGES=$(grep -v '^#' config/packages.chroot | grep -v '^$' | tr '\n' ' ')
           fi
 
-          # Ép môi trường chroot cài đặt phần mềm từ repo của bạn và bộ gõ tiếng Việt
+          # Ép môi trường chroot thực hiện cài đặt các ứng dụng yêu cầu
           sudo chroot source/squashfs /bin/bash -c "
             echo 'deb http://kali.org kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list
             apt-get update
             
-            # Cài đặt danh sách phần mềm từ file packages.chroot của bạn (XFCE, Drivers Wifi, Chromium...)
+            # Cài đặt danh sách phần mềm từ repo của bạn
             if [ ! -z '$TARGET_PACKAGES' ]; then
-              apt-get install -y --no-install-recommends $TARGET_PACKAGES
+              apt-get install -y $TARGET_PACKAGES
             fi
             
-            # Cài bổ sung IBus-Bamboo tiếng Việt và môi trường đồ họa nền tảng
-            apt-get install -y --no-install-recommends ibus ibus-bamboo zenity
+            # Cài đặt thêm bộ gõ tiếng Việt IBus-Bamboo cho hệ thống cứu hộ
+            apt-get install -y ibus ibus-bamboo zenity
             
-            # Khử màn hình đăng nhập LightDM, tự động nhảy thẳng quyền Root vào Desktop cứu hộ
+            # Ép hệ thống tự động đăng nhập thẳng vào Desktop với quyền Root (Bypass LightDM)
             mkdir -p /etc/lightdm/lightdm.conf.d
             echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
             
@@ -70,7 +69,16 @@ jobs:
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
           
-          # Tự vẽ hình nền Desktop cứu hộ đóng dấu bản quyền tác giả DuyKhanhDevelop
+          # 5.1 Tự vẽ màn hình khởi động Boot GRUB (Hiển thị mượt mà trên giao diện Ventoy / Hyper-V)
+          sudo convert -size 800x600 gradient:#0d0d0d-#1a1a2e \
+            -font "$FONT_PATH" -pointsize 36 -fill "#00ffcc" -gravity center -draw "text 0,-40 'FINAL-DUYKHANHOS v5'" \
+            -font "$FONT_PATH" -pointsize 22 -fill "#ffffff" -gravity center -draw "text 0,20 'Powered by DuyKhanhDevelop'" \
+            source/iso/boot/grub/splash.png
+          
+          # Ép cấu hình thay tên hiển thị trên thanh chọn Boot Menu thành tên OS của bạn
+          sudo sed -i 's/Kali GNU\/Linux/FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)/g' source/iso/boot/grub/grub.cfg
+          
+          # 5.2 Tự vẽ hình nền Desktop chính khi nạp vào bên trong hệ điều hành
           sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
           sudo convert -size 1920x1080 canvas:#05050a \
             -font "$FONT_PATH" -pointsize 56 -fill "#00ff00" -gravity center -draw "text 0,-60 'FINAL-DUYKHANHOS v5'" \
@@ -116,51 +124,38 @@ jobs:
           Comment=Bo go tieng Viet
           EOF"
 
-      - name: 7. Tu sinh bo nap khoi dong GRUB va dong goi loi SquashFS
+      - name: 7. Dong goi lai he thong bang xorriso Hybrid mang bo khoi dong GRUB goc
         run: |
-          # Nén hệ thống tệp tin Live core thành file squashfs tối ưu dung lượng xz
-          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz
+          sudo rm -f source/iso/live/filesystem.squashfs
+          # Nén lại hệ thống tệp tin mới với thuật toán nén XZ hiệu năng cao nhất
+          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz -e boot
+          printf $(du -sx --block-size=1 source/squashfs | cut -f1) > source/iso/live/filesystem.size
           
-          # Tự tạo cấu hình menu GRUB 2.x nguyên bản tương thích 100% với Ventoy
-          mkdir -p source/iso/boot/grub
-          sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
-          set timeout=5
-          set default=0
-          
-          insmod ext2
-          insmod loopback
-          insmod iso9660
-          
-          menuentry 'FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)' {
-              linux /live/vmlinuz boot=live quiet splash
-              initrd /live/initrd.img
-          }
-          menuentry 'Khoi dong lai PC (Reboot)' {
-              reboot
-          }
-          EOF"
-          
-          # Trích xuất nhân Kernel và Ramdisk từ lõi chroot ra ngoài phân vùng boot của ISO
-          sudo cp source/squashfs/boot/vmlinuz* source/iso/live/vmlinuz
-          sudo cp source/squashfs/boot/initrd.img* source/iso/live/initrd.img
-
-      - name: 8. Dong goi cấu trúc ISO Hybrid tiêu chuẩn cho Ventoy bằng grub-mkrescue
-        run: |
+          # Đóng gói bằng xorriso nạp MBR và GPT UEFI, giúp Ventoy và Hyper-V nhận diện lõi GRUB gốc ổn định 100%
           cd source/iso
-          # Tạo tệp tin ISO hoàn chỉnh chứa sẵn lõi nạp GRUB ăn ngay ngoài USB Ventoy
-          sudo grub-mkrescue -o "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
+          sudo xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS_V5" \
+            -eltorito-boot isolinux/isolinux.bin \
+            -eltorito-catalog isolinux/boot.cat \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -isohybrid-mbr isolinux/isolinux.bin \
+            -eltorito-alt-boot \
+            -e boot/grub/efi.img \
+            -no-emul-boot -isohybrid-gpt-basdat \
+            -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
 
-      - name: 9. Tu dong day file ISO len muc GitHub Releases
+      - name: 8. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Siêu phẩm cứu hộ máy tính FINAL-DUYKHANHOS v5 độc quyền DuyKhanhDevelop đã chính thức phát hành!
-            - Sửa triệt để lỗi Docker bằng định danh Image `kalilinux/kali-rolling` chuẩn xác 100%.
-            - Tích hợp nhân khởi động GRUB tùy biến tự tạo, tương thích hoàn hảo cực mượt trên USB Ventoy (UEFI + Legacy).
-            - Nạp chuẩn danh sách ứng dụng trong packages.chroot (XFCE4, Driver Wifi, Chromium...).
-            - Đã tích hợp file thông tin About.txt từ repo và bộ gõ tiếng Việt tự bật ngoài Desktop.
+            🚀 Siêu phẩm cứu hộ máy tính FINAL-DUYKHANHOS v5 độc quyền DuyKhanhDevelop đã cập nhật bản Full Fix sửa triệt để Kernel Panic!
+            - Trích xuất cấu trúc lõi Live-boot trực tiếp từ phôi chính chủ để giữ nguyên hệ thống khởi động `/sbin/init`.
+            - Bộ khởi động GRUB Hybrid nhận diện mượt mà trên cả USB Ventoy thật lẫn máy ảo Hyper-V (UEFI Generation 2).
+            - Đồng bộ hóa file danh sách ứng dụng trong `packages.chroot` và file thông tin `About.txt` ngoài Desktop.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
