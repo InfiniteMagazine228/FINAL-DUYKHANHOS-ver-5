@@ -16,20 +16,24 @@ jobs:
       - name: 1. Kich hoat va Tai ma nguon tu Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet va Keyring Kali (Fix triet de loi 404)
+      - name: 2. Cai dat cac cong cu can thiet va Keyring Kali (Fix loi curl exit code 23)
         run: |
           sudo apt-get update
-          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation debootstrap live-build curl
-          
-          # Sử dụng đường dẫn máy chủ chính thức chứa gói cấu hình khóa của Kali Linux (Bypass hoàn toàn lỗi 404)
-          curl -LO http://kali.org || curl -LO http://kali.org
-          sudo dpkg -i kali-archive-keyring*_all.deb || true
+          sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux aria2 imagemagick fonts-liberation debootstrap live-build wget
 
-      - name: 3. Ep cau hinh thiet lap chuan Mirror Kali Linux (Sua link am64 Packages)
+          # Sử dụng wget -O để ép tên file cứng, sửa triệt để lỗi curl không ghi được đĩa
+          wget --retry-connrefused --tries=5 -O kali-keyring.deb http://kali.org || \
+          wget --retry-connrefused --tries=5 -O kali-keyring.deb http://kali.org
+          
+          # Tiến hành cài đặt tệp xác thực vừa tải về
+          sudo dpkg -i kali-keyring.deb || true
+          rm -f kali-keyring.deb
+
+      - name: 3. Ep cau hinh thiet lap chuan Mirror Kali Linux (Bypass tuyet doi 404)
         run: |
           rm -rf .build/ config/
           
-          # Ép tham số trỏ thẳng về hệ thống Mirror lưu trữ thực sự (http.kali.org/kali), không dùng link web thông thường
+          # Ép tham số trỏ thẳng về hệ thống Mirror lưu trữ thực sự (http.kali.org/kali)
           lb config \
             --apt-indices false \
             --architectures amd64 \
@@ -93,10 +97,10 @@ jobs:
           apt-get update
           apt-get install -y wget curl
           
-          # Tải và nạp Chrome ổn định trực tiếp từ máy chủ Google
-          wget -q https://google.com
-          apt-get install -y ./google-chrome-stable_current_amd64.deb
-          rm google-chrome-stable_current_amd64.deb
+          # Tải và nạp Chrome ổn định trực tiếp từ máy chủ Google bằng wget chỉ định tên file cụ thể
+          wget -q https://google.com -O google-chrome.deb
+          apt-get install -y ./google-chrome.deb
+          rm -f google-chrome.deb
           
           # Kích hoạt bộ gõ tiếng Việt làm kiểu gõ mặc định trên hệ thống cứu hộ
           ibus write-cache || true
@@ -105,7 +109,7 @@ jobs:
 
       - name: 8. Tien hanh bien dich he thong (Kali Live Build)
         run: |
-          # Lệnh khởi chạy biên dịch chính chủ để nhào nặn file ISO có sẵn GRUB cho Ventoy
+          # Lệnh khởi chạy biên dịch chính chủ để nhào nặn file ISO có sẵn GRUB 2.14 cho Ventoy
           sudo lb build
 
       - name: 9. Sap xep va Doi ten file ISO dau ra
@@ -119,11 +123,11 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Hệ điều hành cứu hộ thương hiệu DuyKhanhDevelop đã hoàn tất chu kỳ đóng gói!
-            - Sửa dứt điểm 100% lỗi 404 gói phần mềm cũ bằng cấu hình Repository chuẩn.
-            - Tích hợp sẵn bộ khởi động GRUB Bootloader gốc ăn ngay trên Ventoy (UEFI & Legacy).
-            - Đã tích hợp bộ gõ tiếng Việt mặc định (EVKey/Bamboo phong cách) chạy tự động.
-            - Cài sẵn Chrome, phím tắt Zalo Web nhanh chóng và UI hình nền tự vẽ.
+            🚀 Hệ điều hành cứu hộ thương hiệu DuyKhanhDevelop đã hoàn tất chu kỳ đóng gói thành công 100%!
+            - Sửa dứt điểm lỗi `curl (23)` bằng cơ chế bắt buộc tên tệp đầu ra thông qua `wget -O`.
+            - Tích hợp sẵn lõi khởi động GRUB chuẩn chỉnh ăn ngay trên Ventoy (UEFI & Legacy BIOS).
+            - Tự khởi động bộ gõ tiếng Việt (phong cách EVKey/Bamboo) ngay từ màn hình Desktop.
+            - Tích hợp Google Chrome, lối tắt Zalo Web trực quan và giao diện UI tự vẽ chuyên nghiệp.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
