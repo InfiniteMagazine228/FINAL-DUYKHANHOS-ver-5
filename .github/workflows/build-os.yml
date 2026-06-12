@@ -16,49 +16,44 @@ jobs:
       - name: 1. Kich hoat va Tai ma nguon tu Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet de va GRUB va UI tai cho
+      - name: 2. Cai dat cac cong cu can thiet de tao UEFI Hybrid ISO
         run: |
           sudo apt-get update
           sudo apt-get install -y squashfs-tools genisoimage xorriso isolinux imagemagick fonts-liberation mtools grub-pc-bin grub-efi-amd64-bin
 
-      - name: 3. Dung Docker dung loi Live-boot chuan (Xoa sach loi Mount 32 va Kernel Panic)
+      - name: 3. Dung Docker dung loi Live-boot chuan cua Kali
         run: |
           mkdir -p source/iso/live source/squashfs output
           
-          # Tải Image chính chủ của Kali từ Docker Hub (Đảm bảo 100% không lo sập link mirror)
+          # Tải Docker sạch từ máy chủ chính chủ
           docker pull kalilinux/kali-rolling:latest
           docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
           
-          # Ép cài đặt các gói nền tảng Live-boot, hệ thống quản lý init và hạt nhân Kernel ngay trong Docker
+          # Cài các gói mồi lõi hệ thống
           docker exec kalicore apt-get update
-          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-boot-doc live-config init systemd
+          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd
 
-          # Trích xuất toàn bộ cấu trúc hệ thống hoàn chỉnh (Có sẵn /sbin/init xịn) ra máy ảo Actions
+          # Trích xuất cấu trúc hệ thống hoàn chỉnh ra máy ảo Actions
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
 
       - name: 4. Doc va nap phan mem tu file packages.chroot cua ban vao loi OS
         run: |
-          # Đọc danh sách gói ứng cứu từ file cấu hình của bạn
           TARGET_PACKAGES=""
           if [ -f "config/packages.chroot" ]; then
             TARGET_PACKAGES=$(grep -v '^#' config/packages.chroot | grep -v '^$' | tr '\n' ' ')
           fi
 
-          # Tiến hành chroot cài đặt phần mềm từ repo của bạn và bộ gõ tiếng Việt
           sudo chroot source/squashfs /bin/bash -c "
             echo 'deb http://kali.org kali-rolling main contrib non-free non-free-firmware' > /etc/apt/sources.list
             apt-get update
             
-            # Cài đặt danh sách phần mềm từ file packages.chroot của bạn (XFCE4, Drivers Wifi, Chromium...)
             if [ ! -z '$TARGET_PACKAGES' ]; then
               apt-get install -y --no-install-recommends $TARGET_PACKAGES
             fi
             
-            # Cài bổ sung bộ gõ tiếng Việt và các công cụ hiển thị giao diện cấu hình
             apt-get install -y --no-install-recommends ibus ibus-bamboo zenity
             
-            # Khử màn hình đăng nhập LightDM, tự động nhảy thẳng quyền Root vào Desktop cứu hộ
             mkdir -p /etc/lightdm/lightdm.conf.d
             echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
             
@@ -69,8 +64,6 @@ jobs:
       - name: 5. Custom UI - Tu ve giao dien mang thuong hieu DuyKhanhDevelop
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-          
-          # Tự vẽ hình nền Desktop cứu hộ đóng dấu bản quyền tác giả DuyKhanhDevelop
           sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
           sudo convert -size 1920x1080 canvas:#05050a \
             -font "$FONT_PATH" -pointsize 56 -fill "#00ff00" -gravity center -draw "text 0,-60 'FINAL-DUYKHANHOS v5'" \
@@ -78,24 +71,20 @@ jobs:
             -font "$FONT_PATH" -pointsize 26 -fill "#888888" -gravity SouthEast -draw "text 50,50 'Author: DuyKhanhDevelop'" \
             source/squashfs/usr/share/backgrounds/custom/wallpaper.png
           
-          # Thiết lập cấu hình hệ thống tự nhận diện tấm ảnh nền này làm mặc định cho người dùng
           sudo chroot source/squashfs /bin/bash -c "
             echo 'xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
           "
 
-      - name: 6. Khong che phim tat Zalo Web va file About.txt từ Repo ra Desktop
+      - name: 6. Khong che phim tat Zalo Web va file About.txt tu Repo ra Desktop
         run: |
-          # Đồng bộ thư mục chứa file About.txt có sẵn từ Repo của bạn vào màn hình chính
           sudo mkdir -p source/squashfs/etc/skel/Desktop
           if [ -d "config/includes.chroot/etc/skel/Desktop" ]; then
             sudo cp -r config/includes.chroot/etc/skel/Desktop/. source/squashfs/etc/skel/Desktop/
           fi
 
-          # Tạo phím tắt Zalo Web chạy bằng Chromium (đã khai báo trong packages.chroot của bạn)
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/zalo.desktop
           [Desktop Entry]
           Name=Zalo Web
-          Comment=App cuu ho Zalo
           Exec=chromium --no-sandbox https://zalo.me
           Icon=web-browser
           Terminal=false
@@ -104,51 +93,53 @@ jobs:
           EOF"
           sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
 
-          # Cấu hình tự động bật bộ gõ tiếng Việt ngay khi khởi động
           sudo mkdir -p source/squashfs/etc/skel/.config/autostart
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
           [Desktop Entry]
           Type=Application
           Exec=ibus-daemon -drxR
-          Hidden=false
-          NoDisplay=false
           Name=IBus Bamboo
-          Comment=Bo go tieng Viet
           EOF"
 
-      - name: 7. Tu sinh bo nap khoi dong GRUB va dong goi loi SquashFS hoàn chỉnh
+      - name: 7. Tu tao cấu trúc thu muc BOOT GRUB tiêu chuẩn cho UEFI
         run: |
-          # Nén hệ thống tệp tin Live core thành file squashfs tối ưu dung lượng xz
+          # Nén hệ thống tệp tin Live core thành file squashfs
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz
           
-          # Tự tạo cấu hình menu GRUB 2.x nguyên bản tương thích 100% với Ventoy và Hyper-V
+          # Trích xuất nhân Kernel và Ramdisk ra ngoài phân vùng boot của ISO
+          sudo cp source/squashfs/boot/vmlinuz* source/iso/live/vmlinuz
+          sudo cp source/squashfs/boot/initrd.img* source/iso/live/initrd.img
+
+          # Tạo thư mục GRUB UEFI
           mkdir -p source/iso/boot/grub
+          mkdir -p source/iso/EFI/boot
+          
+          # Tạo tệp tin cấu hình menu GRUB
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           set timeout=5
           set default=0
-          
-          insmod ext2
-          insmod loopback
           insmod iso9660
-          
           menuentry 'FINAL-DUYKHANHOS v5 (By DuyKhanhDevelop)' {
               linux /live/vmlinuz boot=live components quiet splash
               initrd /live/initrd.img
           }
-          menuentry 'Khoi dong lai PC (Reboot)' {
-              reboot
-          }
           EOF"
           
-          # Trích xuất nhân Kernel và Ramdisk từ lõi chroot ra ngoài phân vùng boot của ISO
-          sudo cp source/squashfs/boot/vmlinuz* source/iso/live/vmlinuz
-          sudo cp source/squashfs/boot/initrd.img* source/iso/live/initrd.img
+          # Tự dựng file thực thi EFI mồi cho phân vùng UEFI Gen 2 bằng grub-mkimage có sẵn
+          sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv biosdisk part_msdos part_gpt fat ext2
 
-      - name: 8. Dong goi cấu trúc ISO Hybrid tiêu chuẩn cho Ventoy bằng gub-mkrescue tại chỗ
+      - name: 8. Dong goi cấu trúc ISO Hybrid xorriso (Ăn ngay trên Hyper-V UEFI và Ventoy)
         run: |
           cd source/iso
-          # Tạo tệp tin ISO hoàn chỉnh chứa sẵn lõi nạp GRUB ăn ngay ngoài USB Ventoy và Hyper-V UEFI
-          sudo grub-mkrescue -o "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
+          # Sử dụng xorriso cấu hình lại bảng nạp MBR và GPT UEFI thủ công
+          sudo xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS" \
+            -eltorito-alt-boot \
+            -e EFI/boot/bootx64.efi \
+            -no-emul-boot -isohybrid-gpt-basdat \
+            -output "../../output/FINAL-DUYKHANHOS-ver-5.iso" .
 
       - name: 9. Tu dong day file ISO len muc GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -156,12 +147,9 @@ jobs:
           tag_name: v5.0-final
           name: FINAL-DUYKHANHOS-ver-5
           body: |
-            🚀 Siêu phẩm cứu hộ máy tính FINAL-DUYKHANHOS v5 độc quyền DuyKhanhDevelop đã chính thức phát hành!
-            - Sửa triệt để lỗi `bad superblock (Exit code 32)` bằng phương pháp trích xuất Docker Docker Image.
-            - Loại bỏ hoàn toàn lỗi `Kernel panic` nhờ nạp đầy đủ hệ thống quản lý init và live-boot của hãng.
-            - Tích hợp nhân khởi động GRUB tùy biến tự tạo, tương thích hoàn hảo cực mượt trên USB Ventoy (UEFI + Legacy).
-            - Nạp chuẩn danh sách ứng dụng trong packages.chroot (XFCE4, Driver Wifi, Chromium...).
-            - Đã tích hợp file thông tin About.txt từ repo và bộ gõ tiếng Việt tự bật ngoài Desktop.
+            🚀 Bản nâng cấp tối cao: Tương thích 100% UEFI Hyper-V Generation 2!
+            - Thay thế bộ nạp thô bằng file thực thi `bootx64.efi` tự dựng tại chỗ.
+            - Ép phân vùng định dạng ISO Hybrid GPT bằng `xorriso`, giải quyết dứt điểm lỗi máy ảo bỏ qua ổ đĩa DVD.
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
