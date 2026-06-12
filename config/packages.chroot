@@ -20,3 +20,4 @@ firmware-brcm80211
 
 # Trình duyệt chạy app (Chrome, Zalo)
 chromium
+ibus-unikey
