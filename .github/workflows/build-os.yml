@@ -31,7 +31,7 @@ jobs:
           
           # Cài các gói mồi lõi hệ thống
           docker exec kalicore apt-get update
-          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd
+          docker exec kalicore apt-get install -y --no-install-recommends linux-image-amd64 live-boot live-config init systemd neofetch
 
           # Trích xuất cấu trúc hệ thống hoàn chỉnh ra máy ảo Actions
           docker cp kalicore:/ source/squashfs/
@@ -101,11 +101,8 @@ jobs:
           Name=IBus Bamboo
           EOF"
 
-      - name: 7. Tu tao cấu trúc thu muc BOOT GRUB tiêu chuẩn cho UEFI
+      - name: 7. Tu tao cấu trúc thu muc BOOT GRUB tiêu chuẩn cho UEFI (Fix loi biosdisk)
         run: |
-          # Nén hệ thống tệp tin Live core thành file squashfs
-          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs -comp xz
-          
           # Trích xuất nhân Kernel và Ramdisk ra ngoài phân vùng boot của ISO
           sudo cp source/squashfs/boot/vmlinuz* source/iso/live/vmlinuz
           sudo cp source/squashfs/boot/initrd.img* source/iso/live/initrd.img
@@ -125,8 +122,8 @@ jobs:
           }
           EOF"
           
-          # Tự dựng file thực thi EFI mồi cho phân vùng UEFI Gen 2 bằng grub-mkimage có sẵn
-          sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv biosdisk part_msdos part_gpt fat ext2
+          # LOẠI BỎ biosdisk ĐỂ FIX TRIỆT ĐỂ LỖI BIÊN DỊCH UEFI
+          sudo grub-mkimage -o source/iso/EFI/boot/bootx64.efi -p /boot/grub -O x86_64-efi iso9660 normal test loadenv part_msdos part_gpt fat ext2
 
       - name: 8. Dong goi cấu trúc ISO Hybrid xorriso (Ăn ngay trên Hyper-V UEFI và Ventoy)
         run: |
@@ -148,7 +145,8 @@ jobs:
           name: FINAL-DUYKHANHOS-ver-5
           body: |
             🚀 Bản nâng cấp tối cao: Tương thích 100% UEFI Hyper-V Generation 2!
-            - Thay thế bộ nạp thô bằng file thực thi `bootx64.efi` tự dựng tại chỗ.
+            - Sửa triệt để lỗi biên dịch module boot của GRUB (`biosdisk`).
+            - Thay thế bộ nạp thô bằng file thực thi `bootx64.efi` tự dựng tại chỗ chuẩn xác.
             - Ép phân vùng định dạng ISO Hybrid GPT bằng `xorriso`, giải quyết dứt điểm lỗi máy ảo bỏ qua ổ đĩa DVD.
           files: output/*.iso
         env:
