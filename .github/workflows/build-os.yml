@@ -30,10 +30,10 @@ jobs:
           mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output mnt_kali
 
           echo "==> Dang tu dong quet tim link ISO Kali moi nhat..."
-          KALI_URL=$(curl -s https://kali.org | grep -oP 'kali-[0-9.]+[^"]+-live-amd64.iso' | head -n 1)
+          KALI_URL=$(curl -s https://kali.org | grep -oP 'kali-linux-[0-9.]+-live-amd64.iso' | head -n 1)
           
           if [ -z "$KALI_URL" ]; then
-            KALI_URL="https://kali.orgkali-images/kali-weekly/kali-linux-live-amd64.iso"
+            KALI_URL="https://kali.org"
           else
             KALI_URL="https://kali.org$KALI_URL"
           fi
@@ -54,6 +54,7 @@ jobs:
 
           sudo umount mnt_kali
           rm -f /tmp/kali-official.iso
+
 
       - name: 4. Docker - Cai toan bo phan mem vao rootfs
         run: |
