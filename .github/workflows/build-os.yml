@@ -29,19 +29,25 @@ jobs:
         run: |
           mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output mnt_kali
 
-          echo "==> Dang tu dong quet tim link ISO Kali moi nhat..."
-          KALI_URL=$(curl -s https://kali.org | grep -oP 'kali-linux-[0-9.]+-live-amd64.iso' | head -n 1)
+          echo "==> Dang lay danh sach file tu kho luu tru Kali Linux..."
+          # Truy cap truc tiep vao thu muc phat hanh de lay chinh xac ten file ISO Live AMD64
+          ISO_NAME=$(curl -s https://kali.org | grep -oP 'kali-linux-[0-9.]+-live-amd64.iso' | head -n 1)
           
-          if [ -z "$KALI_URL" ]; then
+          if [ -z "$ISO_NAME" ]; then
+            echo "WARN: Khong tim thay ban current, chuyen sang dung ban on dinh weekly"
             KALI_URL="https://kali.org"
           else
-            KALI_URL="https://kali.org$KALI_URL"
+            KALI_URL="https://kali.org$ISO_NAME"
           fi
           
           echo "==> Link tai thuc te: $KALI_URL"
 
+          # Tai file ISO thuc su va kiem tra dung luong dau ra
           wget --tries=3 --waitretry=5 -q --show-progress \
             "$KALI_URL" -O /tmp/kali-official.iso
+
+          echo "==> Kiem tra tap tin tai ve:"
+          ls -lh /tmp/kali-official.iso
 
           sudo mount -o loop,ro /tmp/kali-official.iso mnt_kali
           ls -lh mnt_kali/live/
