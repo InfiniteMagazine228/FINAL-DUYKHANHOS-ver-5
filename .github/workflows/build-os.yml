@@ -1,4 +1,4 @@
-name: Build FINAL-DUYKHANHOS v5 - Installer Edition
+name: Build FINAL-DUYKHANHOS v5
 
 on:
   push:
@@ -22,8 +22,7 @@ jobs:
           sudo apt-get install -y \
             squashfs-tools xorriso isolinux \
             imagemagick fonts-liberation mtools \
-            grub-pc-bin grub-efi-amd64-bin dosfstools \
-            debootstrap debian-archive-keyring
+            grub-pc-bin grub-efi-amd64-bin dosfstools
 
       - name: 3. Tao he thong nen tang voi Docker AMD64
         run: |
@@ -32,13 +31,12 @@ jobs:
           docker pull kalilinux/kali-rolling:latest
           docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
 
-          # Cài kernel + calamares installer thay vì live-boot
           docker exec kalicore apt-get update
           docker exec kalicore apt-get install -y --no-install-recommends \
             linux-image-amd64 \
+            live-boot live-config live-config-systemd \
             systemd systemd-sysv init \
-            calamares calamares-settings-debian \
-            fastfetch
+            calamares fastfetch
 
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
@@ -71,23 +69,41 @@ jobs:
             # Bo go tieng Viet
             apt-get install -y --no-install-recommends ibus ibus-unikey zenity
 
-            # Tao symlink neofetch -> fastfetch
+            # Calamares installer
+            apt-get install -y --no-install-recommends \
+              calamares \
+              parted grub-pc grub-efi-amd64 os-prober
+
+            # Symlink neofetch
             ln -s /usr/bin/fastfetch /usr/bin/neofetch || true
 
-            # Calamares installer (GUI cai dat len o cung)
-            apt-get install -y --no-install-recommends \
-              calamares calamares-settings-kali \
-              parted grub-pc grub-efi-amd64 os-prober
+            # === FIX: Mo khoa root account ===
+            passwd -d root
+            passwd -u root
+            echo 'root:root' | chpasswd
+
+            # === FIX: Autologin root vao Desktop ===
+            mkdir -p /etc/lightdm/lightdm.conf.d
+            echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' \
+              > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
+
+            # Calamares tu dong chay khi login root
+            mkdir -p /root/.config/autostart
+            cat << 'DESK' > /root/.config/autostart/calamares.desktop
+          [Desktop Entry]
+          Type=Application
+          Exec=pkexec calamares
+          Name=Install DUYKHANHOS
+          DESK
 
             apt-get clean
             rm -rf /var/lib/apt/lists/*
           "
 
-      - name: 5. Cau hinh Calamares - Trinh cai dat len o cung
+      - name: 5. Cau hinh Calamares Installer
         run: |
           sudo mkdir -p source/squashfs/etc/calamares/modules
 
-          # Cau hinh chon phan vung tu dong
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/settings.conf
           modules-search: [ local, /usr/lib/calamares/modules ]
           sequence:
@@ -122,7 +138,6 @@ jobs:
           prompt-install: true
           EOF"
 
-          # Cau hinh nguon filesystem de copy sang o cung
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/modules/unpackfs.conf
           unpack:
             - source: /run/live/medium/live/filesystem.squashfs
@@ -130,7 +145,7 @@ jobs:
               destination: ''
           EOF"
 
-          # Tao shortcut Calamares tren Desktop
+          # Shortcut Install tren Desktop
           sudo mkdir -p source/squashfs/etc/skel/Desktop
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/install.desktop
           [Desktop Entry]
@@ -143,7 +158,36 @@ jobs:
           EOF"
           sudo chmod +x source/squashfs/etc/skel/Desktop/install.desktop
 
-      - name: 6. Custom UI - Thuong hieu DuyKhanhDevelop
+      - name: 6. Dong bo file tu Repo va Zalo shortcut
+        run: |
+          sudo mkdir -p source/squashfs/etc/skel/Desktop
+
+          ABOUT_DIR="config/includes.chroot/etc/skel/Desktop"
+          if [ -d "$ABOUT_DIR" ]; then
+            sudo cp -r "$ABOUT_DIR"/. source/squashfs/etc/skel/Desktop/
+          fi
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/zalo.desktop
+          [Desktop Entry]
+          Name=Zalo Web
+          Exec=chromium --no-sandbox https://zalo.me
+          Icon=web-browser
+          Terminal=false
+          Type=Application
+          Categories=Network;
+          EOF"
+          sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
+
+          # Autostart IBus Unikey
+          sudo mkdir -p source/squashfs/etc/skel/.config/autostart
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
+          [Desktop Entry]
+          Type=Application
+          Exec=ibus-daemon -drxR
+          Name=IBus Unikey
+          EOF"
+
+      - name: 7. Custom UI - Thuong hieu DuyKhanhDevelop
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
           sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
@@ -162,9 +206,9 @@ jobs:
               -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
           "
 
-      - name: 7. Dong goi squashfs + Kernel + GRUB Installer
+      - name: 8. Dong goi squashfs + Kernel + GRUB
         run: |
-          # Nen filesystem thanh squashfs (calamares se copy nay len o cung)
+          # Nen filesystem
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
             -comp gzip -processors 4
 
@@ -172,20 +216,26 @@ jobs:
           sudo cp $(find source/squashfs/boot/ -name "vmlinuz*" | head -n 1) source/iso/live/vmlinuz
           sudo cp $(find source/squashfs/boot/ -name "initrd.img*" | head -n 1) source/iso/live/initrd.img
 
-          # GRUB menu co 2 lua chon: Install va Try Live
+          # === FIX: GRUB dung boot=live dung chuan ===
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           insmod iso9660
           insmod linux
+          insmod all_video
           set timeout=10
           set default=0
 
           menuentry 'Install DUYKHANHOS v5 to Hard Disk' {
-              linux /live/vmlinuz boot=live components quiet splash INSTALLER=true
+              linux /live/vmlinuz boot=live components quiet splash
               initrd /live/initrd.img
           }
 
           menuentry 'Try DUYKHANHOS v5 (Without Installing)' {
               linux /live/vmlinuz boot=live components quiet splash
+              initrd /live/initrd.img
+          }
+
+          menuentry 'Boot in Safe Mode' {
+              linux /live/vmlinuz boot=live components nomodeset
               initrd /live/initrd.img
           }
           EOF"
@@ -195,9 +245,10 @@ jobs:
             -o source/iso/EFI/boot/bootx64.efi \
             -p /boot/grub \
             -O x86_64-efi \
-            iso9660 normal test loadenv part_msdos part_gpt fat ext2 linux boot configfile echo
+            iso9660 normal test loadenv part_msdos part_gpt \
+            fat ext2 linux boot configfile echo all_video
 
-          # Tao efiboot.img cho UEFI
+          # Tao efiboot.img
           dd if=/dev/zero of=source/iso/boot/efiboot.img bs=1M count=4
           mkfs.vfat -F 12 source/iso/boot/efiboot.img
           mmd -i source/iso/boot/efiboot.img ::/EFI
@@ -205,7 +256,7 @@ jobs:
           mcopy -i source/iso/boot/efiboot.img \
             source/iso/EFI/boot/bootx64.efi ::/EFI/boot/bootx64.efi
 
-      - name: 8. Dong goi ISO Hybrid Ventoy-Compatible
+      - name: 9. Dong goi ISO Hybrid Ventoy-Compatible
         run: |
           cd source/iso
           sudo xorriso -as mkisofs \
@@ -218,7 +269,7 @@ jobs:
             -isohybrid-gpt-basdat \
             -output "../../output/FINAL-DUYKHANHOS-ver-5-INSTALLER.iso" .
 
-      - name: 9. Day ISO len GitHub Releases
+      - name: 10. Day ISO len GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5.0-installer
@@ -226,9 +277,10 @@ jobs:
           body: |
             🚀 INSTALLER EDITION - Cài thẳng lên ổ cứng!
             - ✅ Boot qua USB Ventoy (MBR/GPT) trên máy thật
-            - ✅ Trình cài đặt GUI Calamares: chọn phân vùng, tạo user, cài GRUB
-            - ✅ Menu GRUB 2 lựa chọn: **Install** hoặc **Try Live**
-            - ✅ Kiến trúc AMD64 chuẩn, hỗ trợ UEFI + Legacy BIOS
+            - ✅ Trình cài đặt GUI Calamares
+            - ✅ GRUB 3 mục: Install / Try Live / Safe Mode
+            - ✅ Fix lỗi initrd-switch-root + root locked
+            - ✅ Tự động mở Calamares khi đăng nhập
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
