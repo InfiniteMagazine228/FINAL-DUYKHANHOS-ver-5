@@ -196,7 +196,7 @@ jobs:
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
 
-            - name: 5. Calamares Branding + Slideshow Cyberpunk #00d4ff
+      - name: 5. Calamares Branding + Slideshow Cyberpunk #00d4ff
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
