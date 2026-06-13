@@ -115,6 +115,71 @@ jobs:
           printf '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0\ngreeter-session=lightdm-gtk-greeter\n' \
             > /etc/lightdm/lightdm.conf.d/autologin.conf
 
+          mkdir -p /etc/skel/Desktop
+          
+          cat << EOF > /etc/skel/Desktop/calamares.desktop
+          [Desktop Entry]
+          Type=Application
+          Version=1.0
+          Name=Install DUYKHANHOS v5
+          Comment=Cai dat he dieu hanh vao o cung
+          Exec=sudo calamares
+          Icon=calamares
+          Terminal=false
+          Categories=System;
+          EOF
+          chmod +x /etc/skel/Desktop/calamares.desktop
+
+          cat << EOF > /etc/skel/Desktop/zalo.desktop
+          [Desktop Entry]
+          Type=Link
+          Name=Zalo Web
+          URL=https://zalo.me
+          Icon=chromium
+          EOF
+          chmod +x /etc/skel/Desktop/zalo.desktop
+
+          if [ -f "/github/workspace/About.txt" ]; then
+            cp /github/workspace/About.txt /etc/skel/Desktop/About.txt
+          else
+            cat << EOF > /etc/skel/Desktop/About.txt
+            🚀 DUYKHANHOS v5 - INSTALLER EDITION
+            -----------------------------------
+            Author: DuyKhanhDevelop
+            Giao dien: Cyberpunk #00d4ff Dark Theme
+            Bo go: IBus Unikey san sang
+            EOF
+          fi
+
+          mkdir -p /usr/share/backgrounds/duykhanhos
+          mkdir -p /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
+
+          cat << EOF > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfce4-desktop" version="1.0">
+            <property name="backdrop" type="empty">
+              <property name="screen0" type="empty">
+                <property name="monitor0" type="empty">
+                  <property name="image-path" type="string" value="/usr/share/backgrounds/duykhanhos/cyberpunk.png"/>
+                  <property name="image-style" type="int" value="5"/>
+                </property>
+              </property>
+            </property>
+          </channel>
+          EOF
+
+          cat << EOF > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xsettings" version="1.0">
+            <property name="Net" type="empty">
+              <property name="ThemeName" type="string" value="Kali-Dark"/>
+              <property name="IconThemeName" type="string" value="Papirus-Dark"/>
+            </property>
+          </channel>
+          EOF
+
+          sed -i 's/Theme=.*/Theme=breeze-text/' /etc/plymouth/plymouthd.conf || true
+
           apt-get clean
           rm -rf /var/lib/apt/lists/*
           SCRIPT
@@ -124,19 +189,28 @@ jobs:
           docker pull kalilinux/kali-rolling
           docker run --privileged --name kalicore \
             -v /tmp/setup.sh:/setup.sh \
+            -v ${{ github.workspace }}:/github/workspace \
             kalilinux/kali-rolling \
             /bin/bash /setup.sh
 
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
 
-      - name: 5. Calamares Branding + Slideshow Cyberpunk #00d4ff
+            - name: 5. Calamares Branding + Slideshow Cyberpunk #00d4ff
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 
           sudo mkdir -p \
             source/squashfs/usr/share/calamares/branding/duykhanhos \
-            source/squashfs/etc/calamares/modules
+            source/squashfs/etc/calamares/modules \
+            source/squashfs/usr/share/backgrounds/duykhanhos
+
+          sudo convert -size 1920x1080 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 80 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-100 'DUYKHANHOS v5'" \
+            -pointsize 30 -fill "#1a4a6a" \
+            -gravity center -draw "text 0,20 'Cyberpunk Edition'" \
+            source/squashfs/usr/share/backgrounds/duykhanhos/cyberpunk.png
 
           sudo convert -size 720x400 canvas:#030710 \
             -font "$FONT_PATH" -pointsize 36 -fill "#00d4ff" \
@@ -231,6 +305,15 @@ jobs:
               SidebarTextCurrent:   "#ffffff"
           EOF
 
+          sudo tee source/squashfs/etc/calamares/modules/finished.conf > /dev/null << EOF
+          ---
+          restartNowEnabled: true
+          restartNowChecked: true
+          restartNowCommand: "systemctl reboot"
+          EOF
+
+          sudo sed -i 's/"show"/"finished"/g' source/squashfs/etc/calamares/settings.conf || true
+
       - name: 6. Nen file he thong SquashFS
         run: |
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
@@ -244,4 +327,43 @@ jobs:
 
           insmod env
           insmod all_video
-menuentry "🚀 Try DUYKHANHOS v5 Live (Cyberpunk Edition)" {linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhosinitrd /live/initrd.img}menuentry "💿 Install DUYKHANHOS v5 Directly (Calamares)" {linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhos calamaresinitrd /live/initrd.img}menuentry "🛠️ DUYKHANHOS v5 (Safe Mode / Failsafe)" {linux /live/vmlinuz boot=live components noapic noacpi nomodeset nodm xforcevesa standardinitrd /live/initrd.img}EOFcp source/iso/boot/grub/grub.cfg source/iso/EFI/boot/grub.cfg- name: 8. Dong goi ISO boot lai bang Xorrisorun: |xorriso -as mkisofs -iso-level 3 -full-iso9660-filenames -volid "DUYKHANHOS_V5" -eltorito-boot boot/grub/bios.img -no-emul-boot -boot-load-size 4 -boot-info-table -output output/duykhanhos-v5-final.iso source/iso || trueif [ ! -f output/duykhanhos-v5-final.iso ]; thenxorriso -as mkisofs -r -V "DUYKHANHOS_V5" -o output/duykhanhos-v5-final.iso source/isofi- name: 9. Upload ISO thanh pham len Github Releases/Artifactsuses: actions/upload-artifact@v4with:name: DUYKHANHOS-v5-ISOpath: output/duykhanhos-v5-final.iso
+
+          menuentry "🚀 Try DUYKHANHOS v5 Live (Cyberpunk Edition)" {
+              linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhos
+              initrd /live/initrd.img
+          }
+
+          menuentry "💿 Install DUYKHANHOS v5 Directly (Calamares)" {
+              linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhos calamares
+              initrd /live/initrd.img
+          }
+
+          menuentry "🛠️ DUYKHANHOS v5 (Safe Mode / Failsafe)" {
+              linux /live/vmlinuz boot=live components noapic noacpi nomodeset nodm xforcevesa standard
+              initrd /live/initrd.img
+          }
+          EOF
+
+          cp source/iso/boot/grub/grub.cfg source/iso/EFI/boot/grub.cfg
+
+      - name: 8. Dong goi ISO boot lai bang Xorriso
+        run: |
+          xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS_V5" \
+            -eltorito-boot boot/grub/bios.img \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -output output/duykhanhos-v5-final.iso \
+            source/iso || true
+            
+          if [ ! -f output/duykhanhos-v5-final.iso ]; then
+            xorriso -as mkisofs -r -V "DUYKHANHOS_V5" \
+              -o output/duykhanhos-v5-final.iso source/iso
+          fi
+
+      - name: 9. Upload ISO thanh pham len Github Releases/Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DUYKHANHOS-v5-ISO
+          path: output/duykhanhos-v5-final.iso
