@@ -3,6 +3,6 @@
 ==================================================
 Hệ điều hành bảo mật và cứu hộ đa năng.
 Được xây dựng bởi: DuyKhanh
-Bản quyền: No Copyright :)
+Bản quyền: Copyright by DuyKhanhOS Group
 Nền tảng: Kali Linux x64 (Live CD Mode)
 ==================================================
