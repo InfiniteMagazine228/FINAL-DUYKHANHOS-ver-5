@@ -13,10 +13,10 @@ jobs:
   build-iso:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Kich hoat va Tai ma nguon tu Repository
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cac cong cu can thiet
+      - name: 2. Cai dat cong cu
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -24,33 +24,28 @@ jobs:
             imagemagick fonts-liberation mtools \
             grub-pc-bin grub-efi-amd64-bin dosfstools
 
-      - name: 3. Tao he thong nen tang voi Docker AMD64
+      - name: 3. Tao he thong co so AMD64
         run: |
           mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output
 
           docker pull kalilinux/kali-rolling:latest
           docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
 
+          # Chi cai kernel truoc, chua copy ra
           docker exec kalicore apt-get update
           docker exec kalicore apt-get install -y --no-install-recommends \
-            linux-image-amd64 \
-            live-boot live-config live-config-systemd \
-            systemd systemd-sysv init \
-            calamares fastfetch
+            linux-image-amd64 systemd systemd-sysv init fastfetch
 
           docker cp kalicore:/ source/squashfs/
           docker rm -f kalicore
 
-      - name: 4. Cai dat phan mem tu packages.chroot
+      - name: 4. Chroot - Cai toan bo phan mem + Rebuild initrd dung
         run: |
           CONFIG_FILE="config/packages.chroot"
-
           TARGET_PACKAGES=""
           if [ -f "$CONFIG_FILE" ]; then
-            echo "==> Da tim thay file cau hinh: $CONFIG_FILE"
             TARGET_PACKAGES=$(grep -v '^#' "$CONFIG_FILE" | grep -v '^$' | tr '\n' ' ')
           else
-            echo "==> Dung goi mac dinh"
             TARGET_PACKAGES="kali-desktop-xfce lightdm xfce4-terminal thunar network-manager-gnome firmware-linux chromium"
           fi
 
@@ -58,12 +53,24 @@ jobs:
           deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
           EOF"
 
+          # Mount proc sys dev de update-initramfs hoat dong
+          sudo mount --bind /proc source/squashfs/proc
+          sudo mount --bind /sys  source/squashfs/sys
+          sudo mount --bind /dev  source/squashfs/dev
+          sudo mount --bind /dev/pts source/squashfs/dev/pts
+
           sudo chroot source/squashfs /bin/bash -c "
+            export DEBIAN_FRONTEND=noninteractive
+
             apt-get update || true
             apt-get install -y --allow-unauthenticated kali-archive-keyring || true
             apt-get update
 
-            # Phan mem chinh
+            # === BUOC 1: Cai live-boot TRUOC khi lam gi khac ===
+            apt-get install -y --no-install-recommends \
+              live-boot live-config live-config-systemd
+
+            # === BUOC 2: Cai phan mem chinh ===
             apt-get install -y --no-install-recommends $TARGET_PACKAGES
 
             # Bo go tieng Viet
@@ -71,36 +78,37 @@ jobs:
 
             # Calamares installer
             apt-get install -y --no-install-recommends \
-              calamares \
-              parted grub-pc grub-efi-amd64 os-prober
+              calamares parted grub-pc grub-efi-amd64 os-prober
 
             # Symlink neofetch
             ln -s /usr/bin/fastfetch /usr/bin/neofetch || true
 
-            # === FIX: Mo khoa root account ===
+            # === FIX 1: Mo khoa root ===
             passwd -d root
             passwd -u root
             echo 'root:root' | chpasswd
 
-            # === FIX: Autologin root vao Desktop ===
+            # === FIX 2: Autologin root ===
             mkdir -p /etc/lightdm/lightdm.conf.d
-            echo -e '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0' \
-              > /etc/lightdm/lightdm.conf.d/lightdm-autologin.conf
+            printf '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0\n' \
+              > /etc/lightdm/lightdm.conf.d/autologin.conf
 
-            # Calamares tu dong chay khi login root
-            mkdir -p /root/.config/autostart
-            cat << 'DESK' > /root/.config/autostart/calamares.desktop
-          [Desktop Entry]
-          Type=Application
-          Exec=pkexec calamares
-          Name=Install DUYKHANHOS
-          DESK
+            # === FIX 3: REBUILD INITRD voi live-boot da duoc cai ===
+            KERNEL_VER=\$(ls /lib/modules/ | head -n 1)
+            echo \"==> Rebuilding initrd for kernel: \$KERNEL_VER\"
+            update-initramfs -u -k \$KERNEL_VER
 
             apt-get clean
             rm -rf /var/lib/apt/lists/*
           "
 
-      - name: 5. Cau hinh Calamares Installer
+          # Umount sau khi chroot xong
+          sudo umount source/squashfs/dev/pts || true
+          sudo umount source/squashfs/dev     || true
+          sudo umount source/squashfs/proc    || true
+          sudo umount source/squashfs/sys     || true
+
+      - name: 5. Cau hinh Calamares
         run: |
           sudo mkdir -p source/squashfs/etc/calamares/modules
 
@@ -145,7 +153,6 @@ jobs:
               destination: ''
           EOF"
 
-          # Shortcut Install tren Desktop
           sudo mkdir -p source/squashfs/etc/skel/Desktop
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/install.desktop
           [Desktop Entry]
@@ -178,7 +185,6 @@ jobs:
           EOF"
           sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
 
-          # Autostart IBus Unikey
           sudo mkdir -p source/squashfs/etc/skel/.config/autostart
           sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
           [Desktop Entry]
@@ -187,7 +193,7 @@ jobs:
           Name=IBus Unikey
           EOF"
 
-      - name: 7. Custom UI - Thuong hieu DuyKhanhDevelop
+      - name: 7. Custom UI - DuyKhanhDevelop
         run: |
           FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
           sudo mkdir -p source/squashfs/usr/share/backgrounds/custom/
@@ -206,17 +212,22 @@ jobs:
               -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
           "
 
-      - name: 8. Dong goi squashfs + Kernel + GRUB
+      - name: 8. Dong goi squashfs + Copy initrd DA REBUILD
         run: |
-          # Nen filesystem
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
             -comp gzip -processors 4
 
-          # Copy kernel va initrd
-          sudo cp $(find source/squashfs/boot/ -name "vmlinuz*" | head -n 1) source/iso/live/vmlinuz
-          sudo cp $(find source/squashfs/boot/ -name "initrd.img*" | head -n 1) source/iso/live/initrd.img
+          # === QUAN TRONG: Copy initrd MOI da duoc rebuild voi live-boot ===
+          KERNEL_VER=$(ls source/squashfs/lib/modules/ | head -n 1)
+          echo "==> Kernel version: $KERNEL_VER"
 
-          # === FIX: GRUB dung boot=live dung chuan ===
+          sudo cp source/squashfs/boot/vmlinuz-${KERNEL_VER} source/iso/live/vmlinuz
+          sudo cp source/squashfs/boot/initrd.img-${KERNEL_VER} source/iso/live/initrd.img
+
+          echo "==> Kiem tra initrd size (phai > 30MB):"
+          ls -lh source/iso/live/initrd.img
+
+          # GRUB menu
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
           insmod iso9660
           insmod linux
@@ -234,13 +245,13 @@ jobs:
               initrd /live/initrd.img
           }
 
-          menuentry 'Boot in Safe Mode' {
+          menuentry 'Safe Mode (nomodeset)' {
               linux /live/vmlinuz boot=live components nomodeset
               initrd /live/initrd.img
           }
           EOF"
 
-          # Build UEFI bootloader
+          # UEFI bootloader
           sudo grub-mkimage \
             -o source/iso/EFI/boot/bootx64.efi \
             -p /boot/grub \
@@ -248,7 +259,6 @@ jobs:
             iso9660 normal test loadenv part_msdos part_gpt \
             fat ext2 linux boot configfile echo all_video
 
-          # Tao efiboot.img
           dd if=/dev/zero of=source/iso/boot/efiboot.img bs=1M count=4
           mkfs.vfat -F 12 source/iso/boot/efiboot.img
           mmd -i source/iso/boot/efiboot.img ::/EFI
@@ -256,7 +266,7 @@ jobs:
           mcopy -i source/iso/boot/efiboot.img \
             source/iso/EFI/boot/bootx64.efi ::/EFI/boot/bootx64.efi
 
-      - name: 9. Dong goi ISO Hybrid Ventoy-Compatible
+      - name: 9. Dong goi ISO Hybrid
         run: |
           cd source/iso
           sudo xorriso -as mkisofs \
@@ -275,12 +285,12 @@ jobs:
           tag_name: v5.0-installer
           name: FINAL-DUYKHANHOS-ver-5-INSTALLER
           body: |
-            🚀 INSTALLER EDITION - Cài thẳng lên ổ cứng!
-            - ✅ Boot qua USB Ventoy (MBR/GPT) trên máy thật
-            - ✅ Trình cài đặt GUI Calamares
-            - ✅ GRUB 3 mục: Install / Try Live / Safe Mode
-            - ✅ Fix lỗi initrd-switch-root + root locked
-            - ✅ Tự động mở Calamares khi đăng nhập
+            🚀 INSTALLER EDITION - Fix initrd-switch-root hoàn toàn!
+            - ✅ initrd được REBUILD sau khi cài live-boot → fix lỗi switch-root
+            - ✅ Root account được mở khóa
+            - ✅ Boot qua USB Ventoy máy thật
+            - ✅ Calamares cài thẳng lên ổ cứng
+            - ✅ GRUB 3 mục: Install / Try / Safe Mode
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
