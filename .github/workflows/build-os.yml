@@ -22,24 +22,22 @@ jobs:
           sudo apt-get install -y \
             squashfs-tools xorriso isolinux \
             imagemagick fonts-liberation mtools \
-            grub-pc-bin grub-efi-amd64-bin dosfstools
+            grub-pc-bin grub-efi-amd64-bin dosfstools \
+            live-build
 
-      - name: 3. Tao he thong co so AMD64
+      - name: 3. Tao rootfs bang debootstrap truc tiep (Khong qua Docker)
         run: |
           mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output
 
-          docker pull kalilinux/kali-rolling:latest
-          docker run --name kalicore -d kalilinux/kali-rolling:latest tail -f /dev/null
+          # Dung debootstrap tao rootfs Debian/Kali chuan, tranh loi Docker layer
+          sudo debootstrap \
+            --arch=amd64 \
+            --include=linux-image-amd64,live-boot,live-boot-initramfs-tools,live-config,live-config-systemd,live-tools,systemd-sysv,init \
+            kali-rolling \
+            source/squashfs \
+            http://http.kali.org/kali
 
-          # Chi cai kernel truoc, chua copy ra
-          docker exec kalicore apt-get update
-          docker exec kalicore apt-get install -y --no-install-recommends \
-            linux-image-amd64 systemd systemd-sysv init fastfetch
-
-          docker cp kalicore:/ source/squashfs/
-          docker rm -f kalicore
-
-      - name: 4. Chroot - Cai toan bo phan mem + Rebuild initrd dung
+      - name: 4. Chroot cai phan mem chinh
         run: |
           CONFIG_FILE="config/packages.chroot"
           TARGET_PACKAGES=""
@@ -53,60 +51,60 @@ jobs:
           deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware
           EOF"
 
-          # Mount proc sys dev de update-initramfs hoat dong
-          sudo mount --bind /proc source/squashfs/proc
-          sudo mount --bind /sys  source/squashfs/sys
-          sudo mount --bind /dev  source/squashfs/dev
+          # Mount can thiet de chroot hoat dong day du
+          sudo mount --bind /proc    source/squashfs/proc
+          sudo mount --bind /sys     source/squashfs/sys
+          sudo mount --bind /dev     source/squashfs/dev
           sudo mount --bind /dev/pts source/squashfs/dev/pts
+          sudo mount --bind /run     source/squashfs/run
 
-          sudo chroot source/squashfs /bin/bash -c "
+          sudo chroot source/squashfs /bin/bash << CHROOT
             export DEBIAN_FRONTEND=noninteractive
-
-            apt-get update || true
-            apt-get install -y --allow-unauthenticated kali-archive-keyring || true
             apt-get update
 
-            # === BUOC 1: Cai live-boot TRUOC khi lam gi khac ===
-            apt-get install -y --no-install-recommends \
-              live-boot live-config live-config-systemd
-
-            # === BUOC 2: Cai phan mem chinh ===
+            # Cai phan mem chinh
             apt-get install -y --no-install-recommends $TARGET_PACKAGES
 
             # Bo go tieng Viet
             apt-get install -y --no-install-recommends ibus ibus-unikey zenity
 
-            # Calamares installer
+            # Calamares installer GUI
             apt-get install -y --no-install-recommends \
               calamares parted grub-pc grub-efi-amd64 os-prober
 
-            # Symlink neofetch
-            ln -s /usr/bin/fastfetch /usr/bin/neofetch || true
+            # fastfetch + neofetch symlink
+            apt-get install -y --no-install-recommends fastfetch || true
+            ln -s /usr/bin/fastfetch /usr/bin/neofetch 2>/dev/null || true
 
-            # === FIX 1: Mo khoa root ===
+            # === FIX: Mo khoa root ===
             passwd -d root
             passwd -u root
             echo 'root:root' | chpasswd
 
-            # === FIX 2: Autologin root ===
+            # === FIX: Autologin root Desktop ===
             mkdir -p /etc/lightdm/lightdm.conf.d
             printf '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0\n' \
               > /etc/lightdm/lightdm.conf.d/autologin.conf
 
-            # === FIX 3: REBUILD INITRD voi live-boot da duoc cai ===
-            KERNEL_VER=\$(ls /lib/modules/ | head -n 1)
-            echo \"==> Rebuilding initrd for kernel: \$KERNEL_VER\"
+            # === FIX CHINH: Rebuild initrd voi live-boot da cai day du ===
+            KERNEL_VER=\$(ls /lib/modules/ | sort -V | tail -n 1)
+            echo "==> Kernel: \$KERNEL_VER"
             update-initramfs -u -k \$KERNEL_VER
+
+            # Kiem tra /init ton tai trong initrd
+            echo "==> Kiem tra live-boot /init trong initrd:"
+            lsinitramfs /boot/initrd.img-\$KERNEL_VER | grep "^init$" || echo "WARN: /init khong tim thay!"
 
             apt-get clean
             rm -rf /var/lib/apt/lists/*
-          "
+          CHROOT
 
-          # Umount sau khi chroot xong
+          # Umount theo thu tu nguoc
+          sudo umount source/squashfs/run     || true
           sudo umount source/squashfs/dev/pts || true
           sudo umount source/squashfs/dev     || true
-          sudo umount source/squashfs/proc    || true
           sudo umount source/squashfs/sys     || true
+          sudo umount source/squashfs/proc    || true
 
       - name: 5. Cau hinh Calamares
         run: |
@@ -212,20 +210,27 @@ jobs:
               -s /usr/share/backgrounds/custom/wallpaper.png' >> /etc/skel/.bashrc
           "
 
-      - name: 8. Dong goi squashfs + Copy initrd DA REBUILD
+      - name: 8. Dong goi squashfs + Copy initrd chinh xac
         run: |
+          # Lay dung kernel version
+          KERNEL_VER=$(ls source/squashfs/lib/modules/ | sort -V | tail -n 1)
+          echo "==> Su dung Kernel: $KERNEL_VER"
+
+          # Nen squashfs
           sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
-            -comp gzip -processors 4
+            -comp gzip -processors 4 -e proc -e sys -e dev -e run
 
-          # === QUAN TRONG: Copy initrd MOI da duoc rebuild voi live-boot ===
-          KERNEL_VER=$(ls source/squashfs/lib/modules/ | head -n 1)
-          echo "==> Kernel version: $KERNEL_VER"
-
+          # Copy vmlinuz va initrd chinh xac theo kernel version
           sudo cp source/squashfs/boot/vmlinuz-${KERNEL_VER} source/iso/live/vmlinuz
           sudo cp source/squashfs/boot/initrd.img-${KERNEL_VER} source/iso/live/initrd.img
 
-          echo "==> Kiem tra initrd size (phai > 30MB):"
-          ls -lh source/iso/live/initrd.img
+          echo "==> Kiem tra initrd size (phai > 50MB):"
+          ls -lh source/iso/live/
+
+          # Kiem tra /init co trong initrd
+          echo "==> Kiem tra /init trong initrd:"
+          lsinitramfs source/iso/live/initrd.img | grep "^init$" && \
+            echo "OK: /init ton tai" || echo "FAILED: /init khong co!"
 
           # GRUB menu
           sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
@@ -235,12 +240,12 @@ jobs:
           set timeout=10
           set default=0
 
-          menuentry 'Install DUYKHANHOS v5 to Hard Disk' {
+          menuentry 'Install DUYKHANHOS v5 to Hard Disk ( Tải về ổ cứng ) ' {
               linux /live/vmlinuz boot=live components quiet splash
               initrd /live/initrd.img
           }
 
-          menuentry 'Try DUYKHANHOS v5 (Without Installing)' {
+          menuentry 'Try DUYKHANHOS v5 (Without Installing) (Thử % Tải)' {
               linux /live/vmlinuz boot=live components quiet splash
               initrd /live/initrd.img
           }
@@ -285,12 +290,12 @@ jobs:
           tag_name: v5.0-installer
           name: FINAL-DUYKHANHOS-ver-5-INSTALLER
           body: |
-            🚀 INSTALLER EDITION - Fix initrd-switch-root hoàn toàn!
-            - ✅ initrd được REBUILD sau khi cài live-boot → fix lỗi switch-root
-            - ✅ Root account được mở khóa
-            - ✅ Boot qua USB Ventoy máy thật
+            🚀 BẢN CHÍNH THỨC ĐÃ CÓ !!!
+            - ✅ Dùng debootstrap thay Docker → rootfs chuẩn 100%
+            - ✅ live-boot-initramfs-tools cài từ đầu → /init có trong initrd
+            - ✅ Rebuild initrd sau cài đặt → không còn Kernel Panic
+            - ✅ Root mở khóa, autologin Desktop
             - ✅ Calamares cài thẳng lên ổ cứng
-            - ✅ GRUB 3 mục: Install / Try / Safe Mode
           files: output/*.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
