@@ -1,0 +1,658 @@
+name: Build FINAL-DUYKHANHOS v5
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Cai dat cong cu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            squashfs-tools xorriso isolinux \
+            imagemagick fonts-liberation mtools \
+            grub-pc-bin grub-efi-amd64-bin dosfstools \
+            wget curl initramfs-tools
+
+      - name: 3. Tai ISO Kali chinh thuc - Lay vmlinuz + initrd chuan
+        run: |
+          mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output mnt_kali
+
+          echo "==> Dang tai ISO Kali chinh thuc..."
+          wget -q --show-progress \
+            "https://cdimage.kali.org/current/kali-linux-live-amd64.iso" \
+            -O /tmp/kali-official.iso
+
+          sudo mount -o loop,ro /tmp/kali-official.iso mnt_kali
+          ls -lh mnt_kali/live/
+
+          sudo cp mnt_kali/live/vmlinuz   source/iso/live/vmlinuz
+          sudo cp mnt_kali/live/initrd.img source/iso/live/initrd.img
+
+          lsinitramfs source/iso/live/initrd.img | grep "^init$" && \
+            echo "PASS: /init OK" || echo "WARN: kiem tra lai"
+
+          sudo umount mnt_kali
+          rm -f /tmp/kali-official.iso
+
+      - name: 4. Docker - Cai toan bo phan mem vao rootfs
+        run: |
+          CONFIG_FILE="config/packages.chroot"
+          TARGET_PACKAGES=""
+          if [ -f "$CONFIG_FILE" ]; then
+            TARGET_PACKAGES=$(grep -v '^#' "$CONFIG_FILE" | grep -v '^$' | tr '\n' ' ')
+          else
+            TARGET_PACKAGES="kali-desktop-xfce lightdm xfce4-terminal thunar network-manager-gnome firmware-linux chromium"
+          fi
+
+          cat << SCRIPT > /tmp/setup.sh
+          #!/bin/bash
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update
+          apt-get install -y --allow-unauthenticated kali-archive-keyring || true
+          apt-get update
+
+          apt-get install -y --no-install-recommends \
+            live-boot live-config live-config-systemd live-tools \
+            systemd systemd-sysv init dbus
+
+          apt-get install -y --no-install-recommends $TARGET_PACKAGES
+
+          apt-get install -y --no-install-recommends \
+            ibus ibus-unikey zenity
+
+          # Calamares + QML slideshow support
+          apt-get install -y --no-install-recommends \
+            calamares calamares-settings-kali \
+            qml-module-qtquick2 \
+            qml-module-qtquick-controls2 \
+            qml-module-qtwebengine \
+            parted gparted grub-pc grub-efi-amd64 os-prober
+
+          apt-get install -y --no-install-recommends fastfetch || true
+          ln -s /usr/bin/fastfetch /usr/bin/neofetch 2>/dev/null || true
+
+          apt-get install -y --no-install-recommends \
+            plymouth plymouth-themes papirus-icon-theme || true
+
+          passwd -d root
+          passwd -u root
+          echo 'root:root' | chpasswd
+
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          printf '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0\ngreeter-session=lightdm-gtk-greeter\n' \
+            > /etc/lightdm/lightdm.conf.d/autologin.conf
+
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          SCRIPT
+
+          chmod +x /tmp/setup.sh
+
+          docker pull kalilinux/kali-rolling
+          docker run --privileged --name kalicore \
+            -v /tmp/setup.sh:/setup.sh \
+            kalilinux/kali-rolling \
+            /bin/bash /setup.sh
+
+          docker cp kalicore:/ source/squashfs/
+          docker rm -f kalicore
+
+      - name: 5. Calamares Branding + Slideshow (giong Ubuntu)
+        run: |
+          FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
+          # Tao thu muc branding DuyKhanhOS
+          sudo mkdir -p \
+            source/squashfs/usr/share/calamares/branding/duykhanhos \
+            source/squashfs/etc/calamares/modules
+
+          # --- Tao anh slideshow bang ImageMagick ---
+          # Slide 1: Chao mung
+          sudo convert -size 720x400 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 36 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-60 'Chao mung den DUYKHANHOS v5'" \
+            -pointsize 18 -fill "#1a4a6a" \
+            -gravity center -draw "text 0,10 'He dieu hanh cuu ho manh me nhat'" \
+            -pointsize 14 -fill "#0a2a40" \
+            -gravity center -draw "text 0,50 'Dang sao chep du lieu vao o cung...'" \
+            -pointsize 12 -fill "#061828" \
+            -gravity SouthEast -draw "text 20,20 'DuyKhanhDevelop'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/slide1.png
+
+          # Slide 2: Tinh nang Desktop
+          sudo convert -size 720x400 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-80 'XFCE Desktop Sieu Nhe'" \
+            -pointsize 16 -fill "#c8e8ff" \
+            -gravity center -draw "text 0,-30 '✓  Khoi dong nhanh, it ton RAM'" \
+            -gravity center -draw "text 0,0  '✓  Giao dien toi huyen bi Cyberpunk'" \
+            -gravity center -draw "text 0,30 '✓  Tu dong dang nhap root'" \
+            -gravity center -draw "text 0,60 '✓  Wallpaper DuyKhanhOS doc quyen'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/slide2.png
+
+          # Slide 3: Phan mem co san
+          sudo convert -size 720x400 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-80 'Phan Mem Co San'" \
+            -pointsize 16 -fill "#c8e8ff" \
+            -gravity center -draw "text 0,-30 '✓  Chromium - Trinh duyet web nhanh'" \
+            -gravity center -draw "text 0,0  '✓  Zalo Web - Nhan tin tien loi'" \
+            -gravity center -draw "text 0,30 '✓  IBus Unikey - Bo go tieng Viet'" \
+            -gravity center -draw "text 0,60 '✓  Fastfetch - Thong tin he thong'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/slide3.png
+
+          # Slide 4: Cong cu cuu ho
+          sudo convert -size 720x400 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-80 'Cong Cu Cuu Ho'" \
+            -pointsize 16 -fill "#c8e8ff" \
+            -gravity center -draw "text 0,-30 '✓  GParted - Quan ly phan vung'" \
+            -gravity center -draw "text 0,0  '✓  Network Manager - Ket noi mang'" \
+            -gravity center -draw "text 0,30 '✓  Terminal XFCE - Dong lenh manh me'" \
+            -gravity center -draw "text 0,60 '✓  Kali Linux Tools - Bo cong cu day du'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/slide4.png
+
+          # Slide 5: Hoan tat
+          sudo convert -size 720x400 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-60 'Gan Xong Roi!'" \
+            -pointsize 18 -fill "#c8e8ff" \
+            -gravity center -draw "text 0,0 'He thong dang duoc cai dat vao o cung'" \
+            -pointsize 14 -fill "#1a4a6a" \
+            -gravity center -draw "text 0,40 'Vui long khong tat may trong luc nay'" \
+            -pointsize 12 -fill "#061828" \
+            -gravity SouthEast -draw "text 20,20 'DuyKhanhDevelop'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/slide5.png
+
+          # --- Logo Calamares ---
+          sudo convert -size 80x80 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 28 -fill "#00d4ff" \
+            -gravity center -draw "text 0,0 'DK'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/logo.png
+
+          sudo convert -size 160x44 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 18 -fill "#00d4ff" \
+            -gravity center -draw "text 0,0 'DUYKHANHOS'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/product-logo.png
+
+          sudo convert -size 320x200 canvas:#030710 \
+            -font "$FONT_PATH" -pointsize 22 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-20 'DUYKHANHOS v5'" \
+            -pointsize 13 -fill "#1a4a6a" \
+            -gravity center -draw "text 0,20 'WIN THE RESCUE SYSTEM'" \
+            source/squashfs/usr/share/calamares/branding/duykhanhos/welcome.png
+
+          # --- branding.desc - File cau hinh chinh cua Calamares branding ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/calamares/branding/duykhanhos/branding.desc
+          componentName: duykhanhos
+
+          welcomeStyleCalamares: false
+          welcomeExpandingLogo:  true
+
+          strings:
+            productName:         DuyKhanhOS v5
+            shortProductName:    DuyKhanhOS
+            version:             5.0
+            shortVersion:        5.0
+            versionedName:       DuyKhanhOS v5
+            shortVersionedName:  DuyKhanhOS 5
+            bootloaderEntryName: DuyKhanhOS
+            productUrl:          https://github.com/InfiniteMagazine228/FINAL-DUYKHANHOS-ver-5
+            supportUrl:          https://github.com/InfiniteMagazine228/FINAL-DUYKHANHOS-ver-5/issues
+            releaseNotesUrl:     https://github.com/InfiniteMagazine228/FINAL-DUYKHANHOS-ver-5
+
+          images:
+            productLogo:         logo.png
+            productIcon:         logo.png
+            productWelcome:      welcome.png
+
+          slideshow:               show.qml
+          slideshowAPI:            2
+
+          style:
+            sidebarBackground:     "#030710"
+            sidebarText:           "#c8e8ff"
+            sidebarTextSelect:     "#00d4ff"
+            sidebarTextHighlight:  "#00d4ff"
+          EOF"
+
+          # --- show.qml - Slideshow QML giong Ubuntu ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/calamares/branding/duykhanhos/show.qml
+          import QtQuick 2.0
+          import calamares.slideshow 1.0
+
+          Presentation {
+              id: presentation
+
+              Timer {
+                  interval: 4000
+                  running:  true
+                  repeat:   true
+                  onTriggered: presentation.goToNextSlide()
+              }
+
+              Slide {
+                  Image {
+                      id: slide1
+                      source: \"slide1.png\"
+                      width:  800
+                      height: 440
+                      fillMode: Image.PreserveAspectFit
+                      anchors.centerIn: parent
+                  }
+              }
+
+              Slide {
+                  Image {
+                      source: \"slide2.png\"
+                      width:  800
+                      height: 440
+                      fillMode: Image.PreserveAspectFit
+                      anchors.centerIn: parent
+                  }
+              }
+
+              Slide {
+                  Image {
+                      source: \"slide3.png\"
+                      width:  800
+                      height: 440
+                      fillMode: Image.PreserveAspectFit
+                      anchors.centerIn: parent
+                  }
+              }
+
+              Slide {
+                  Image {
+                      source: \"slide4.png\"
+                      width:  800
+                      height: 440
+                      fillMode: Image.PreserveAspectFit
+                      anchors.centerIn: parent
+                  }
+              }
+
+              Slide {
+                  Image {
+                      source: \"slide5.png\"
+                      width:  800
+                      height: 440
+                      fillMode: Image.PreserveAspectFit
+                      anchors.centerIn: parent
+                  }
+              }
+
+              function onActivate() {}
+              function onLeave()   {}
+          }
+          EOF"
+
+          # --- Calamares settings.conf tro vao branding duykhanhos ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/settings.conf
+          modules-search: [ local, /usr/lib/calamares/modules ]
+
+          sequence:
+            - show:
+              - welcome
+              - locale
+              - keyboard
+              - partition
+              - users
+              - summary
+            - exec:
+              - partition
+              - mount
+              - unpackfs
+              - machineid
+              - fstab
+              - locale
+              - keyboard
+              - localecfg
+              - users
+              - displaymanager
+              - networkcfg
+              - hwclock
+              - grubcfg
+              - bootloader
+              - packages
+              - removeuser
+              - unmount
+            - show:
+              - finished
+
+          branding: duykhanhos
+          prompt-install: false
+          EOF"
+
+          # --- unpackfs.conf ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/modules/unpackfs.conf
+          unpack:
+            - source: /run/live/medium/live/filesystem.squashfs
+              sourcefs: squashfs
+              destination: ''
+          EOF"
+
+          # --- welcome.conf - Nut Try + Install ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/modules/welcome.conf
+          showSupportUrl:        true
+          showKnownIssuesUrl:    true
+          showReleaseNotesUrl:   false
+          showDonateUrl:         false
+          requirements:
+            requiredStorage:     8
+            requiredRam:         1.0
+            internetCheckUrl:    https://google.com
+            check:
+              - storage
+              - ram
+              - power
+            required:
+              - storage
+              - ram
+          EOF"
+
+          # --- finished.conf - Sau khi cai xong ---
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/calamares/modules/finished.conf
+          restartNowEnabled:    true
+          restartNowChecked:    true
+          restartNowCommand:    reboot
+          notifyOnFinished:     false
+          EOF"
+
+      - name: 6. Custom UI - DuyKhanhOS Cyberpunk Theme
+        run: |
+          FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+
+          sudo mkdir -p \
+            source/squashfs/usr/share/backgrounds/custom \
+            source/squashfs/usr/share/plymouth/themes/duykhanhos \
+            source/squashfs/usr/share/themes/DuyKhanhOS/gtk-3.0 \
+            source/squashfs/usr/share/themes/DuyKhanhOS/gtk-2.0 \
+            source/squashfs/etc/lightdm \
+            source/squashfs/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+
+          # Wallpaper
+          sudo convert -size 1920x1080 canvas:#030710 \
+            +noise Random -threshold 98.5% \
+            -fill "#00d4ff" -opaque white -blur 0x1 \
+            -font "$FONT_PATH" \
+            -pointsize 72 -fill "#00d4ff" \
+            -gravity center -draw "text 0,-80 'DUYKHANHOS'" \
+            -pointsize 30 -fill "#1a4a6a" \
+            -gravity center -draw "text 0,10 'WIN THE RESCUE SYSTEM  v5'" \
+            -pointsize 18 -fill "#0a2a40" \
+            -gravity SouthEast -draw "text 60,60 'Author: DuyKhanhDevelop'" \
+            source/squashfs/usr/share/backgrounds/custom/wallpaper.png
+
+          sudo convert \
+            source/squashfs/usr/share/backgrounds/custom/wallpaper.png \
+            -brightness-contrast -30x-10 \
+            source/squashfs/usr/share/backgrounds/custom/login-bg.png
+
+          # LightDM
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/lightdm/lightdm-gtk-greeter.conf
+          [greeter]
+          background=/usr/share/backgrounds/custom/login-bg.png
+          theme-name=DuyKhanhOS
+          icon-theme-name=Papirus-Dark
+          font-name=Monospace Bold 11
+          xft-antialias=true
+          clock-format=%H:%M:%S  |  %a %d/%m/%Y
+          indicators=~clock;~spacer;~power
+          EOF"
+
+          # GTK Theme
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/themes/DuyKhanhOS/gtk-3.0/gtk.css
+          * { color: #c8e8ff; }
+          window, .background { background-color: #040911; }
+          headerbar, .titlebar { background-color: #070f1e; border-bottom: 1px solid #00d4ff22; color: #00d4ff; }
+          button { background-color: #07111f; border: 1px solid #00d4ff33; color: #00d4ff; border-radius: 4px; padding: 4px 10px; }
+          button:hover { background-color: #0a1a30; border-color: #00d4ff88; }
+          entry { background-color: #070f1e; border: 1px solid #00d4ff44; color: #c8e8ff; border-radius: 4px; padding: 4px; }
+          treeview { background-color: #040911; color: #c8e8ff; }
+          treeview:selected { background-color: #00d4ff22; color: #00d4ff; }
+          scrollbar trough { background-color: #07111f; }
+          scrollbar slider { background-color: #00d4ff44; border-radius: 4px; }
+          EOF"
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/themes/DuyKhanhOS/gtk-2.0/gtkrc
+          gtk-color-scheme = \"bg_color:#040911\nfg_color:#c8e8ff\nbase_color:#070f1e\ntext_color:#c8e8ff\nselected_bg_color:#00d4ff22\nselected_fg_color:#00d4ff\"
+          EOF"
+
+          # Plymouth
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/plymouth/themes/duykhanhos/duykhanhos.plymouth
+          [Plymouth Theme]
+          Name=DuyKhanhOS
+          Description=DuyKhanhOS Cyberpunk Boot
+          ModuleName=script
+
+          [script]
+          ImageDir=/usr/share/plymouth/themes/duykhanhos
+          ScriptFile=/usr/share/plymouth/themes/duykhanhos/duykhanhos.script
+          EOF"
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/usr/share/plymouth/themes/duykhanhos/duykhanhos.script
+          Window.SetBackgroundTopColor(0.02, 0.04, 0.06);
+          Window.SetBackgroundBottomColor(0.01, 0.02, 0.04);
+          screen_width  = Window.GetWidth();
+          screen_height = Window.GetHeight();
+          title = Image.Text(\"DUYKHANHOS v5\", 0.00, 0.83, 1.00, 1.0, \"LiberationSans Bold 24\");
+          title_s = Sprite(title);
+          title_s.SetX(screen_width  / 2 - title.GetWidth()  / 2);
+          title_s.SetY(screen_height * 0.52);
+          sub = Image.Text(\"WIN THE RESCUE SYSTEM\", 0.10, 0.30, 0.42, 1.0, \"LiberationSans 13\");
+          sub_s = Sprite(sub);
+          sub_s.SetX(screen_width / 2 - sub.GetWidth() / 2);
+          sub_s.SetY(screen_height * 0.52 + 38);
+          bar_w = 320; bar_h = 4;
+          bar_x = screen_width / 2 - bar_w / 2;
+          bar_y = screen_height * 0.70;
+          bg_img = Image(bar_w, bar_h);
+          bg_img.Rectangle(0, 0, bar_w, bar_h, 0.04, 0.10, 0.18, 1.0);
+          bg_s = Sprite(bg_img);
+          bg_s.SetX(bar_x); bg_s.SetY(bar_y);
+          fun refresh_cb() {
+            p = Plymouth.GetBootProgress();
+            w = Math.Int(bar_w * p);
+            if (w < 1) { w = 1; }
+            bar_img = Image(w, bar_h);
+            bar_img.Rectangle(0, 0, w, bar_h, 0.00, 0.83, 1.00, 1.0);
+            bar_s = Sprite(bar_img);
+            bar_s.SetX(bar_x); bar_s.SetY(bar_y);
+          }
+          Plymouth.SetRefreshFunction(refresh_cb);
+          EOF"
+
+          # XFCE config
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
+          <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+          <channel name=\"xfce4-desktop\" version=\"1.0\">
+            <property name=\"backdrop\" type=\"empty\">
+              <property name=\"screen0\" type=\"empty\">
+                <property name=\"monitor0\" type=\"empty\">
+                  <property name=\"workspace0\" type=\"empty\">
+                    <property name=\"last-image\" type=\"string\" value=\"/usr/share/backgrounds/custom/wallpaper.png\"/>
+                    <property name=\"image-style\" type=\"int\" value=\"5\"/>
+                  </property>
+                </property>
+              </property>
+            </property>
+          </channel>
+          EOF"
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
+          <?xml version=\"1.0\" encoding=\"UTF-8\"?>
+          <channel name=\"xsettings\" version=\"1.0\">
+            <property name=\"Net\" type=\"empty\">
+              <property name=\"ThemeName\"         type=\"string\" value=\"DuyKhanhOS\"/>
+              <property name=\"IconThemeName\"     type=\"string\" value=\"Papirus-Dark\"/>
+            </property>
+            <property name=\"Gtk\" type=\"empty\">
+              <property name=\"FontName\"          type=\"string\" value=\"Liberation Sans 10\"/>
+              <property name=\"MonospaceFontName\" type=\"string\" value=\"Liberation Mono 10\"/>
+            </property>
+          </channel>
+          EOF"
+
+          sudo chroot source/squashfs /bin/bash -c \
+            "plymouth-set-default-theme duykhanhos 2>/dev/null || true"
+
+      - name: 7. Desktop shortcuts - Install + Zalo + About.txt
+        run: |
+          sudo mkdir -p source/squashfs/etc/skel/Desktop
+
+          ABOUT_DIR="config/includes.chroot/etc/skel/Desktop"
+          if [ -d "$ABOUT_DIR" ]; then
+            echo "==> Copy Desktop files tu repo..."
+            sudo cp -r "$ABOUT_DIR"/. source/squashfs/etc/skel/Desktop/
+          fi
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/install.desktop
+          [Desktop Entry]
+          Name=Install DUYKHANHOS to Disk
+          Comment=Cai dat he dieu hanh len o cung
+          Exec=pkexec calamares
+          Icon=system-software-install
+          Terminal=false
+          Type=Application
+          Categories=System;
+          EOF"
+          sudo chmod +x source/squashfs/etc/skel/Desktop/install.desktop
+
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/Desktop/zalo.desktop
+          [Desktop Entry]
+          Name=Zalo Web
+          Comment=Nhan tin Zalo tren trinh duyet
+          Exec=chromium --no-sandbox https://zalo.me
+          Icon=web-browser
+          Terminal=false
+          Type=Application
+          Categories=Network;
+          EOF"
+          sudo chmod +x source/squashfs/etc/skel/Desktop/zalo.desktop
+
+          sudo mkdir -p source/squashfs/etc/skel/.config/autostart
+          sudo bash -c "cat << 'EOF' > source/squashfs/etc/skel/.config/autostart/ibus.desktop
+          [Desktop Entry]
+          Type=Application
+          Exec=ibus-daemon -drxR
+          Name=IBus Unikey
+          X-GNOME-Autostart-enabled=true
+          EOF"
+
+      - name: 8. Dong goi squashfs + GRUB + UEFI
+        run: |
+          echo "==> Nen squashfs..."
+          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
+            -comp gzip -processors 4 \
+            -e proc -e sys -e dev -e run -e tmp
+
+          echo "==> Kiem tra files:"
+          ls -lh source/iso/live/
+
+          lsinitramfs source/iso/live/initrd.img | grep "^init$" && \
+            echo "PASS: /init OK" || echo "FAIL: /init missing!"
+
+          sudo bash -c "cat << 'EOF' > source/iso/boot/grub/grub.cfg
+          insmod iso9660
+          insmod linux
+          insmod all_video
+          insmod gfxterm
+          set gfxmode=auto
+          terminal_output gfxterm
+          set timeout=10
+          set default=0
+
+          menuentry 'Install DUYKHANHOS v5 to Hard Disk' {
+              linux /live/vmlinuz boot=live components quiet splash plymouth.enable=1
+              initrd /live/initrd.img
+          }
+
+          menuentry 'Try DUYKHANHOS v5 (Without Installing)' {
+              linux /live/vmlinuz boot=live components quiet splash plymouth.enable=1
+              initrd /live/initrd.img
+          }
+
+          menuentry 'Safe Mode (nomodeset)' {
+              linux /live/vmlinuz boot=live components nomodeset
+              initrd /live/initrd.img
+          }
+          EOF"
+
+          sudo grub-mkimage \
+            -o source/iso/EFI/boot/bootx64.efi \
+            -p /boot/grub -O x86_64-efi \
+            iso9660 normal test loadenv part_msdos part_gpt \
+            fat ext2 linux boot configfile echo all_video gfxterm gfxmenu
+
+          dd if=/dev/zero of=source/iso/boot/efiboot.img bs=1M count=4
+          mkfs.vfat -F 12 source/iso/boot/efiboot.img
+          mmd -i source/iso/boot/efiboot.img ::/EFI
+          mmd -i source/iso/boot/efiboot.img ::/EFI/boot
+          mcopy -i source/iso/boot/efiboot.img \
+            source/iso/EFI/boot/bootx64.efi ::/EFI/boot/bootx64.efi
+
+      - name: 9. Dong goi ISO Hybrid Ventoy-Compatible
+        run: |
+          cd source/iso
+          sudo xorriso -as mkisofs \
+            -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "DUYKHANHOS" \
+            -eltorito-alt-boot \
+            -e boot/efiboot.img \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -output "../../output/FINAL-DUYKHANHOS-ver-5-INSTALLER.iso" .
+
+          echo "==> ISO final:"
+          ls -lh ../../output/
+
+      - name: 10. Day ISO len GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v5.0-installer
+          name: FINAL-DUYKHANHOS-ver-5-INSTALLER
+          body: |
+            ## 🚀 DUYKHANHOS v5 - INSTALLER EDITION
+
+            ### ✅ Fix hoàn toàn
+            - vmlinuz + initrd từ ISO Kali chính thức → không còn Kernel Panic
+            - Root mở khóa, autologin Desktop
+
+            ### 🎨 Custom UI Cyberpunk #00d4ff
+            - Plymouth boot splash animated
+            - LightDM login screen tối huyền bí
+            - GTK Dark Theme DuyKhanhOS
+            - XFCE wallpaper + Papirus-Dark icons
+
+            ### 📺 Calamares Slideshow (giống Ubuntu)
+            - 5 slide tự động chuyển mỗi 4 giây
+            - Giới thiệu tính năng trong lúc chép dữ liệu
+            - Progress bar + % hoàn thành
+            - Tự động reboot sau khi cài xong
+
+            ### 📦 Tính năng
+            - Desktop: Install + Zalo + About.txt từ repo
+            - IBus Unikey tự động khởi động
+            - Boot Ventoy MBR/GPT máy thật
+            - GRUB: Install / Try / Safe Mode
+
+            **Author: DuyKhanhDevelop**
+          files: output/*.iso
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
