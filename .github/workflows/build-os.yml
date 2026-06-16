@@ -3,7 +3,7 @@ name: Build DuyKhanhOS
 on:
   push:
     tags:
-      - 'v*'   # ví dụ: v1.0.0
+      - 'v*'   # ví dụ: v5.0-final
 
 jobs:
   build-arm64-os:
@@ -16,7 +16,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
-            qemu-system-arm qemu-system-misc qemu-efi-aarch64 genisoimage debootstrap
+            qemu-system-arm qemu-system-misc qemu-system-aarch64 qemu-efi-aarch64 \
+            genisoimage debootstrap
 
       - name: Build Custom Kernel
         run: |
