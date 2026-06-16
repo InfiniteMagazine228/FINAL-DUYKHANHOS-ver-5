@@ -1,368 +1,78 @@
-name: Build FINAL-DUYKHANHOS v5
+name: Build DuyKhanhOS
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-
-permissions:
-  contents: write
+    tags:
+      - 'v*'   # ví dụ: v1.0.0
 
 jobs:
-  build-iso:
+  build-arm64-os:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout Repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: 2. Cai dat cong cu
+      - name: Setup ARM64 toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            squashfs-tools xorriso isolinux \
-            imagemagick fonts-liberation mtools \
-            grub-pc-bin grub-efi-amd64-bin dosfstools \
-            wget curl initramfs-tools
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
+            qemu-system-arm qemu-efi genisoimage debootstrap
 
-      - name: 3. Tai ISO Kali chinh thuc - Lay vmlinuz + initrd chuan
+      - name: Build Custom Kernel
         run: |
-          mkdir -p source/squashfs source/iso/live source/iso/boot/grub source/iso/EFI/boot output mnt_kali
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
+          mkdir -p output/kernel
+          cp arch/arm64/boot/Image output/kernel/
 
-          echo "==> Dang tai ISO Kali tu duong dan truc tiep..."
-          KALI_URL="https://kali.org"
-          
-          echo "==> Link tai thuc te: $KALI_URL"
-
-          wget --tries=3 --waitretry=5 -q --show-progress \
-            "$KALI_URL" -O /tmp/kali-official.iso
-
-          echo "==> Kiem tra tap tin tai ve:"
-          ls -lh /tmp/kali-official.iso
-
-          sudo mount -o loop,ro /tmp/kali-official.iso mnt_kali
-          ls -lh mnt_kali/live/
-
-          sudo cp mnt_kali/live/vmlinuz   source/iso/live/vmlinuz
-          sudo cp mnt_kali/live/initrd.img source/iso/live/initrd.img
-
-          lsinitramfs source/iso/live/initrd.img | grep "^init$" && \
-            echo "PASS: /init OK" || echo "WARN: kiem tra lai"
-
-          sudo umount mnt_kali
-          rm -f /tmp/kali-official.iso
-
-
-
-      - name: 4. Docker - Cai toan bo phan mem vao rootfs
+      - name: Create RootFS with GUI + Apps
         run: |
-          CONFIG_FILE="config/packages.chroot"
-          TARGET_PACKAGES=""
-          if [ -f "$CONFIG_FILE" ]; then
-            TARGET_PACKAGES=$(grep -v '^#' "$CONFIG_FILE" | grep -v '^$' | tr '\n' ' ')
-          else
-            TARGET_PACKAGES="kali-desktop-xfce lightdm xfce4-terminal thunar network-manager-gnome firmware-linux chromium"
-          fi
+          sudo debootstrap --arch=arm64 stable rootfs http://deb.debian.org/debian
+          sudo chroot rootfs apt-get update
+          # Desktop Manager phong cách Kali
+          sudo chroot rootfs apt-get install -y kali-desktop-manager xfce4 lightdm
+          # Trình duyệt Chromium
+          sudo chroot rootfs apt-get install -y chromium
+          # Bộ gõ tiếng Việt Unikey
+          sudo chroot rootfs apt-get install -y ibus-unikey
+          # Shell Zsh tùy biến
+          sudo chroot rootfs apt-get install -y zsh
+          # Bộ công cụ Kali
+          sudo chroot rootfs apt-get install -y kali-tools-top10
+          # Theme Cyberpunk
+          sudo chroot rootfs apt-get install -y arc-theme papirus-icon-theme
+          echo "DuyKhanhOS Cyberpunk XFCE" > rootfs/etc/motd
 
-          cat << SCRIPT > /tmp/setup.sh
-          #!/bin/bash
-          set -e
-          export DEBIAN_FRONTEND=noninteractive
-
-          apt-get update
-          apt-get install -y --allow-unauthenticated kali-archive-keyring || true
-          apt-get update
-
-          apt-get install -y --no-install-recommends \
-            live-boot live-config live-config-systemd live-tools \
-            systemd systemd-sysv init dbus
-
-          apt-get install -y --no-install-recommends $TARGET_PACKAGES
-
-          apt-get install -y --no-install-recommends \
-            ibus ibus-unikey zenity
-
-          apt-get install -y --no-install-recommends \
-            calamares calamares-settings-kali \
-            qml-module-qtquick2 \
-            qml-module-qtquick-controls2 \
-            qml-module-qtwebengine \
-            parted gparted grub-pc grub-efi-amd64 os-prober
-
-          apt-get install -y --no-install-recommends fastfetch || true
-          ln -s /usr/bin/fastfetch /usr/bin/neofetch 2>/dev/null || true
-
-          apt-get install -y --no-install-recommends \
-            plymouth plymouth-themes papirus-icon-theme || true
-
-          passwd -d root
-          passwd -u root
-          echo 'root:root' | chpasswd
-
-          mkdir -p /etc/skel/.config/autostart
-          cat << EOF > /etc/skel/.config/autostart/ibus.desktop
-          [Desktop Entry]
-          Type=Application
-          Exec=ibus-daemon -drxR
-          Hidden=false
-          NoDisplay=false
-          X-GNOME-Autostart-enabled=true
-          Name=IBus Unikey
-          EOF
-
-          mkdir -p /etc/lightdm/lightdm.conf.d
-          printf '[Seat:*]\nautologin-user=root\nautologin-user-timeout=0\ngreeter-session=lightdm-gtk-greeter\n' \
-            > /etc/lightdm/lightdm.conf.d/autologin.conf
-
-          mkdir -p /etc/skel/Desktop
-          
-          cat << EOF > /etc/skel/Desktop/calamares.desktop
-          [Desktop Entry]
-          Type=Application
-          Version=1.0
-          Name=Install DUYKHANHOS v5
-          Comment=Cai dat he dieu hanh vao o cung
-          Exec=sudo calamares
-          Icon=calamares
-          Terminal=false
-          Categories=System;
-          EOF
-          chmod +x /etc/skel/Desktop/calamares.desktop
-
-          cat << EOF > /etc/skel/Desktop/zalo.desktop
-          [Desktop Entry]
-          Type=Link
-          Name=Zalo Web
-          URL=https://zalo.me
-          Icon=chromium
-          EOF
-          chmod +x /etc/skel/Desktop/zalo.desktop
-
-          if [ -f "/github/workspace/About.txt" ]; then
-            cp /github/workspace/About.txt /etc/skel/Desktop/About.txt
-          else
-            cat << EOF > /etc/skel/Desktop/About.txt
-            🚀 DUYKHANHOS v5 - INSTALLER EDITION
-            -----------------------------------
-            Author: DuyKhanhDevelop
-            Giao dien: Cyberpunk #00d4ff Dark Theme
-            Bo go: IBus Unikey san sang
-            EOF
-          fi
-
-          mkdir -p /usr/share/backgrounds/duykhanhos
-          mkdir -p /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml
-
-          cat << EOF > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xfce4-desktop" version="1.0">
-            <property name="backdrop" type="empty">
-              <property name="screen0" type="empty">
-                <property name="monitor0" type="empty">
-                  <property name="image-path" type="string" value="/usr/share/backgrounds/duykhanhos/cyberpunk.png"/>
-                  <property name="image-style" type="int" value="5"/>
-                </property>
-              </property>
-            </property>
-          </channel>
-          EOF
-
-          cat << EOF > /etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
-          <?xml version="1.0" encoding="UTF-8"?>
-          <channel name="xsettings" version="1.0">
-            <property name="Net" type="empty">
-              <property name="ThemeName" type="string" value="Kali-Dark"/>
-              <property name="IconThemeName" type="string" value="Papirus-Dark"/>
-            </property>
-          </channel>
-          EOF
-
-          sed -i 's/Theme=.*/Theme=breeze-text/' /etc/plymouth/plymouthd.conf || true
-
-          apt-get clean
-          rm -rf /var/lib/apt/lists/*
-          SCRIPT
-
-          chmod +x /tmp/setup.sh
-
-          docker pull kalilinux/kali-rolling
-          docker run --privileged --name kalicore \
-            -v /tmp/setup.sh:/setup.sh \
-            -v ${{ github.workspace }}:/github/workspace \
-            kalilinux/kali-rolling \
-            /bin/bash /setup.sh
-
-          docker cp kalicore:/ source/squashfs/
-          docker rm -f kalicore
-
-      - name: 5. Calamares Branding + Slideshow Cyberpunk #00d4ff
+      - name: Package ISO
         run: |
-          FONT_PATH="/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+          mkdir -p iso/boot
+          cp output/kernel/Image iso/boot/
+          genisoimage -o DuyKhanhOS-arm64.iso -b boot/Image iso/
 
-          sudo mkdir -p \
-            source/squashfs/usr/share/calamares/branding/duykhanhos \
-            source/squashfs/etc/calamares/modules \
-            source/squashfs/usr/share/backgrounds/duykhanhos
-
-          sudo convert -size 1920x1080 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 80 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-100 'DUYKHANHOS v5'" \
-            -pointsize 30 -fill "#1a4a6a" \
-            -gravity center -draw "text 0,20 'Cyberpunk Edition'" \
-            source/squashfs/usr/share/backgrounds/duykhanhos/cyberpunk.png
-
-          sudo convert -size 720x400 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 36 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-60 'Chao mung den DUYKHANHOS v5'" \
-            -pointsize 18 -fill "#1a4a6a" \
-            -gravity center -draw "text 0,10 'He dieu hanh cuu ho manh me nhat'" \
-            -pointsize 14 -fill "#0a2a40" \
-            -gravity center -draw "text 0,50 'Dang sao chep du lieu vao o cung...'" \
-            -pointsize 12 -fill "#061828" \
-            -gravity SouthEast -draw "text 20,20 'DuyKhanhDevelop'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/slide1.png
-
-          sudo convert -size 720x400 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-80 'XFCE Desktop Sieu Nhe'" \
-            -pointsize 16 -fill "#c8e8ff" \
-            -gravity center -draw "text 0,-30 '✓  Khoi dong nhanh, it ton RAM'" \
-            -gravity center -draw "text 0,0  '✓  Giao dien toi huyen bi Cyberpunk'" \
-            -gravity center -draw "text 0,30 '✓  Tu dong dang nhap root'" \
-            -gravity center -draw "text 0,60 '✓  Wallpaper DuyKhanhOS doc quyen'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/slide2.png
-
-          sudo convert -size 720x400 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-80 'Phan Mem Co San'" \
-            -pointsize 16 -fill "#c8e8ff" \
-            -gravity center -draw "text 0,-30 '✓  Chromium - Trinh duyet web nhanh'" \
-            -gravity center -draw "text 0,0  '✓  Zalo Web - Nhan tin tien loi'" \
-            -gravity center -draw "text 0,30 '✓  IBus Unikey - Bo go tieng Viet'" \
-            -gravity center -draw "text 0,60 '✓  Fastfetch - Thong tin he thong'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/slide3.png
-
-          sudo convert -size 720x400 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-80 'Cong Cu Cuu Ho'" \
-            -pointsize 16 -fill "#c8e8ff" \
-            -gravity center -draw "text 0,-30 '✓  GParted - Quan ly phan vung'" \
-            -gravity center -draw "text 0,0  '✓  Network Manager - Ket noi mang'" \
-            -gravity center -draw "text 0,30 '✓  Terminal XFCE - Dong lenh manh me'" \
-            -gravity center -draw "text 0,60 '✓  Kali Linux Tools - Bo cong cu day du'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/slide4.png
-
-          sudo convert -size 720x400 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 30 -fill "#00d4ff" \
-            -gravity center -draw "text 0,-60 'Gan Xong Roi!'" \
-            -pointsize 18 -fill "#c8e8ff" \
-            -gravity center -draw "text 0,0 'He thong dang duoc cai dat vao o cung'" \
-            -pointsize 14 -fill "#1a4a6a" \
-            -gravity center -draw "text 0,40 'Vui long khong tat may trong luc nay'" \
-            -pointsize 12 -fill "#061828" \
-            -gravity SouthEast -draw "text 20,20 'DuyKhanhDevelop'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/slide5.png
-
-          sudo convert -size 80x80 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 28 -fill "#00d4ff" \
-            -gravity center -draw "text 0,0 'DK'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/logo.png
-
-          sudo convert -size 160x44 canvas:#030710 \
-            -font "$FONT_PATH" -pointsize 18 -fill "#00d4ff" \
-            -gravity center -draw "text 0,0 'DUYKHANHOS'" \
-            source/squashfs/usr/share/calamares/branding/duykhanhos/squid.png
-
-          sudo tee source/squashfs/usr/share/calamares/branding/duykhanhos/branding.desc > /dev/null << EOF
-          ---
-          componentName:   duykhanhos
-          welcomeStyleCalamares: true
-          welcomeExpandingLogo: true
-          windowExpand:    normal
-          strings:
-              productName:         DUYKHANHOS
-              shortProductName:    DKOS
-              version:             5
-              shortVersion:        5
-              versionedName:       DUYKHANHOS v5 Installer
-              shortVersionedName:  DKOS v5
-              bootloaderEntryName: DUYKHANHOS
-          images:
-              productLogo:         "logo.png"
-              productIcon:         "logo.png"
-              productWelcome:      "squid.png"
-          slideshow:
-              - "slide1.png"
-              - "slide2.png"
-              - "slide3.png"
-              - "slide4.png"
-              - "slide5.png"
-          slideshowAPI: 1
-          style:
-              SidebarBackground:    "#030710"
-              SidebarText:          "#00d4ff"
-              SidebarTextCurrent:   "#ffffff"
-          EOF
-
-          sudo tee source/squashfs/etc/calamares/modules/finished.conf > /dev/null << EOF
-          ---
-          restartNowEnabled: true
-          restartNowChecked: true
-          restartNowCommand: "systemctl reboot"
-          EOF
-
-          sudo sed -i 's/"show"/"finished"/g' source/squashfs/etc/calamares/settings.conf || true
-
-      - name: 6. Nen file he thong SquashFS
-        run: |
-          sudo mksquashfs source/squashfs source/iso/live/filesystem.squashfs \
-            -comp xz -b 1M -noappend
-
-      - name: 7. Cau hinh Menu GRUB Boot (Ventoy, MBR/GPT, Safe Mode)
-        run: |
-          cat << 'EOF' > source/iso/boot/grub/grub.cfg
-          set timeout=10
-          set default=0
-
-          insmod env
-          insmod all_video
-
-          menuentry "🚀 Try DUYKHANHOS v5 Live (Cyberpunk Edition)" {
-              linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhos
-              initrd /live/initrd.img
-          }
-
-          menuentry "💿 Install DUYKHANHOS v5 Directly (Calamares)" {
-              linux /live/vmlinuz boot=live components quiet splash noeject username=root hostname=duykhanhos calamares
-              initrd /live/initrd.img
-          }
-
-          menuentry "🛠️ DUYKHANHOS v5 (Safe Mode / Failsafe)" {
-              linux /live/vmlinuz boot=live components noapic noacpi nomodeset nodm xforcevesa standard
-              initrd /live/initrd.img
-          }
-          EOF
-
-          cp source/iso/boot/grub/grub.cfg source/iso/EFI/boot/grub.cfg
-
-      - name: 8. Dong goi ISO boot lai bang Xorriso
-        run: |
-          xorriso -as mkisofs \
-            -iso-level 3 \
-            -full-iso9660-filenames \
-            -volid "DUYKHANHOS_V5" \
-            -eltorito-boot boot/grub/bios.img \
-            -no-emul-boot -boot-load-size 4 -boot-info-table \
-            -output output/duykhanhos-v5-final.iso \
-            source/iso || true
-            
-          if [ ! -f output/duykhanhos-v5-final.iso ]; then
-            xorriso -as mkisofs -r -V "DUYKHANHOS_V5" \
-              -o output/duykhanhos-v5-final.iso source/iso
-          fi
-
-      - name: 9. Upload ISO thanh pham len Github Releases/Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: DUYKHANHOS-v5-ISO
-          path: output/duykhanhos-v5-final.iso
+          tag_name: ${{ github.ref }}
+          release_name: DuyKhanhOS ${{ github.ref }}
+          body: |
+            🚀 DuyKhanhOS ARM64 Cyberpunk Edition
+            - Kernel: Custom-Core ARM64
+            - Desktop: Kali-Cyberpunk XFCE
+            - Packages: kali-desktop-manager, chromium, ibus-unikey, zsh, kali-tools-top10
+            - Theme: Arc + Papirus
+          draft: false
+          prerelease: false
+
+      - name: Upload ISO to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: DuyKhanhOS-arm64.iso
+          asset_name: DuyKhanhOS-arm64.iso
+          asset_content_type: application/octet-stream
