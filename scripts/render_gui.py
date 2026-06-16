@@ -8,7 +8,8 @@ font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 font = ImageFont.truetype(font_path, 60)
 
 text = "DuyKhanhOS"
-w, h = draw.textsize(text, font=font)
+bbox = draw.textbbox((0, 0), text, font=font)
+w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 x = (img.width - w) // 2
 y = (img.height - h) // 2
 
