@@ -10,18 +10,10 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup ARM64 toolchain
+      - name: Setup toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
-            genisoimage debootstrap
-
-      - name: Build Custom Kernel
-        run: |
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
-          mkdir -p output/kernel
-          cp arch/arm64/boot/Image output/kernel/
+          sudo apt-get install -y build-essential genisoimage debootstrap
 
       - name: Create RootFS with GUI + Apps
         run: |
@@ -35,8 +27,9 @@ jobs:
       - name: Package ISO
         run: |
           mkdir -p iso/boot
-          cp output/kernel/Image iso/boot/
-          genisoimage -o DuyKhanhOS-arm64.iso -b boot/Image iso/
+          # dùng kernel mặc định từ rootfs
+          cp rootfs/boot/vmlinuz* iso/boot/vmlinuz
+          genisoimage -o DuyKhanhOS-arm64.iso -b boot/vmlinuz iso/
 
       - name: Create Release
         id: create_release
@@ -48,7 +41,6 @@ jobs:
           release_name: DuyKhanhOS v5.0-final
           body: |
             🚀 DuyKhanhOS ARM64 Cyberpunk Edition
-            - Kernel: Custom-Core ARM64
             - Desktop: Kali-Cyberpunk XFCE
             - Packages: kali-desktop-manager, chromium, ibus-unikey, zsh, kali-tools-top10
             - Theme: Arc + Papirus
