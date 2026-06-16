@@ -1,7 +1,10 @@
 name: Build DuyKhanhOS XFCE
 
 on:
-  workflow_dispatch:   # Cho phép nút Run workflow
+  push:
+    branches:
+      - main
+
 
 jobs:
   build-rootfs:
