@@ -17,16 +17,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential genisoimage debootstrap qemu-user-static rsync parted
 
-      - name: Create RootFS with GUI + Apps
+      - name: Create RootFS with XFCE Desktop
         run: |
-          sudo debootstrap --arch=arm64 --foreign --variant=minbase stable rootfs http://deb.debian.org/debian
+          sudo debootstrap --arch=arm64 --foreign --variant=minbase stable rootfs https://ftp.debian.org/debian/
           sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
           sudo chroot rootfs /debootstrap/debootstrap --second-stage
           sudo chroot rootfs apt-get update
-          sudo chroot rootfs apt-get install -y kali-desktop-manager xfce4 lightdm
-          sudo chroot rootfs apt-get install -y chromium ibus-unikey zsh kali-tools-top10
+          sudo chroot rootfs apt-get install -y task-xfce-desktop lightdm
+          sudo chroot rootfs apt-get install -y chromium ibus-unikey zsh
           sudo chroot rootfs apt-get install -y arc-theme papirus-icon-theme
-          echo "DuyKhanhOS Cyberpunk XFCE" > rootfs/etc/motd
+          echo "DuyKhanhOS XFCE Edition" > rootfs/etc/motd
           cp rootfs/install.sh iso/install.sh
           chmod +x iso/install.sh
 
@@ -57,12 +57,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v5.0-final
-          release_name: DuyKhanhOS v5.0-final
+          tag_name: v5.0-xfce
+          release_name: DuyKhanhOS v5.0 XFCE
           body: |
-            🚀 DuyKhanhOS ARM64 Cyberpunk Edition
-            - Desktop: Kali-Cyberpunk XFCE
-            - Packages: kali-desktop-manager, chromium, ibus-unikey, zsh, kali-tools-top10
+            🚀 DuyKhanhOS ARM64 XFCE Edition
+            - Desktop: Debian XFCE (giống Kali)
+            - Packages: task-xfce-desktop, chromium, ibus-unikey, zsh
             - Theme: Arc + Papirus
             - Boot Menu: Try Live / Install to Disk
           draft: false
