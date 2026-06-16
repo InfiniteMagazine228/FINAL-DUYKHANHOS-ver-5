@@ -1,7 +1,7 @@
 name: Build DuyKhanhOS XFCE
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # Cho phép nút "Run workflow" xuất hiện
 
 jobs:
   build-rootfs:
@@ -53,7 +53,7 @@ jobs:
           menuentry "Install to Disk" {
             linux /boot/vmlinuz boot=install
             initrd /boot/initrd.img
-          }' > iso/boot/grub/grub.cfg
+          }' | tee iso/boot/grub/grub.cfg
           grub-mkrescue -o DuyKhanhOS.iso iso
 
       - name: End build timer
