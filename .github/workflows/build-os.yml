@@ -6,6 +6,8 @@ on:
 jobs:
   build-arm64-os:
     runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -17,7 +19,7 @@ jobs:
 
       - name: Create RootFS with GUI + Apps
         run: |
-          sudo debootstrap --arch=arm64 --foreign stable rootfs http://deb.debian.org/debian
+          sudo debootstrap --arch=arm64 --foreign --variant=minbase stable rootfs http://deb.debian.org/debian
           sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
           sudo chroot rootfs /debootstrap/debootstrap --second-stage
           sudo chroot rootfs apt-get update
@@ -100,7 +102,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.build-arm64-os.outputs.create_release_upload_url }}
+          upload_url: ${{ needs.build-arm64-os.outputs.upload_url }}
           asset_path: output/gui.png
           asset_name: DuyKhanhOS-GUI-Art.png
           asset_content_type: image/png
