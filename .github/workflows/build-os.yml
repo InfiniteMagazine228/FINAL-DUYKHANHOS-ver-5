@@ -1,9 +1,7 @@
 name: Build DuyKhanhOS
 
 on:
-  push:
-    tags:
-      - 'v*'   # ví dụ: v5.0-final
+  workflow_dispatch:
 
 jobs:
   build-arm64-os:
@@ -16,7 +14,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
-            qemu-system-arm qemu-system-misc qemu-system-aarch64 qemu-efi-aarch64 \
             genisoimage debootstrap
 
       - name: Build Custom Kernel
@@ -47,8 +44,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: DuyKhanhOS ${{ github.ref }}
+          tag_name: v5.0-final
+          release_name: DuyKhanhOS v5.0-final
           body: |
             🚀 DuyKhanhOS ARM64 Cyberpunk Edition
             - Kernel: Custom-Core ARM64
