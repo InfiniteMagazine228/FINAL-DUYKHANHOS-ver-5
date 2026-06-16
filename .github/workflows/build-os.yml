@@ -1,7 +1,6 @@
 name: Build DuyKhanhOS
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*'   # ví dụ: v1.0.0
@@ -17,7 +16,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
-            qemu-system-arm qemu-efi genisoimage debootstrap
+            qemu-system-arm qemu-system-misc qemu-efi-aarch64 genisoimage debootstrap
 
       - name: Build Custom Kernel
         run: |
@@ -30,17 +29,8 @@ jobs:
         run: |
           sudo debootstrap --arch=arm64 stable rootfs http://deb.debian.org/debian
           sudo chroot rootfs apt-get update
-          # Desktop Manager phong cách Kali
           sudo chroot rootfs apt-get install -y kali-desktop-manager xfce4 lightdm
-          # Trình duyệt Chromium
-          sudo chroot rootfs apt-get install -y chromium
-          # Bộ gõ tiếng Việt Unikey
-          sudo chroot rootfs apt-get install -y ibus-unikey
-          # Shell Zsh tùy biến
-          sudo chroot rootfs apt-get install -y zsh
-          # Bộ công cụ Kali
-          sudo chroot rootfs apt-get install -y kali-tools-top10
-          # Theme Cyberpunk
+          sudo chroot rootfs apt-get install -y chromium ibus-unikey zsh kali-tools-top10
           sudo chroot rootfs apt-get install -y arc-theme papirus-icon-theme
           echo "DuyKhanhOS Cyberpunk XFCE" > rootfs/etc/motd
 
@@ -76,3 +66,27 @@ jobs:
           asset_path: DuyKhanhOS-arm64.iso
           asset_name: DuyKhanhOS-arm64.iso
           asset_content_type: application/octet-stream
+
+  generate-art:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Pillow
+        run: pip install pillow
+
+      - name: Render Cyberpunk GUI Art
+        run: |
+          python scripts/render_gui.py
+
+      - name: Upload GUI Art
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuyKhanhOS-GUI-Art
+          path: output/gui.png
