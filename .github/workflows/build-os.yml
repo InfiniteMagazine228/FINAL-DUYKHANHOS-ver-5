@@ -13,7 +13,7 @@ jobs:
       - name: Setup toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential genisoimage debootstrap qemu-user-static rsync parted grub-efi-arm64-bin
+          sudo apt-get install -y build-essential genisoimage debootstrap qemu-user-static rsync parted
 
       - name: Create RootFS with GUI + Apps
         run: |
@@ -25,7 +25,6 @@ jobs:
           sudo chroot rootfs apt-get install -y chromium ibus-unikey zsh kali-tools-top10
           sudo chroot rootfs apt-get install -y arc-theme papirus-icon-theme
           echo "DuyKhanhOS Cyberpunk XFCE" > rootfs/etc/motd
-          # copy installer script bạn đã viết
           cp rootfs/install.sh iso/install.sh
           chmod +x iso/install.sh
 
